@@ -805,9 +805,7 @@ function renderHtml() {
       <div class="title-wrap">
         <h1 id="list-title">Todoodle</h1>
         <svg class="title-scribble" viewBox="0 0 120 8" preserveAspectRatio="none" fill="none" aria-hidden="true">
-          <path d="M2 5.5 C 15 1.8, 28 7.2, 39 4.2" stroke="#E5534B" stroke-width="2.6" stroke-linecap="round"/>
-          <path d="M42 4.2 C 55 1.2, 67 7.0, 79 3.8" stroke="#2F81F7" stroke-width="2.6" stroke-linecap="round"/>
-          <path d="M82 3.8 C 95 0.8, 107 6.5, 118 3.2" stroke="#ECB22E" stroke-width="2.6" stroke-linecap="round"/>
+          <path d="M2 5.5 C 22 1.5, 42 7.5, 62 3.5 C 82 -0.5, 100 6.5, 118 3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
         </svg>
       </div>
       <div class="top-bar-right">
