@@ -7,8 +7,7 @@ import { randomUUID } from "node:crypto";
 
 const execFileAsync = promisify(execFile);
 
-const copilotHome = process.env.COPILOT_HOME || join(homedir(), ".copilot");
-const artifactsDir = join(copilotHome, "extensions", "todo-list", "artifacts");
+const artifactsDir = join(import.meta.dirname, "artifacts");
 
 const FUN_EMOJIS = [
     "🥞", "🚀", "✨", "🌈", "🔥", "⚡", "🎯", "🌵", "🐙", "🦊",
@@ -606,11 +605,23 @@ export async function backupListToWorkdocs(listId = "default") {
     const state = await loadList(listId);
     const markdown = formatTodoFeedMarkdown(state);
     const contentBase64 = Buffer.from(markdown, "utf8").toString("base64");
-    const repoPath = "repos/ariroseonline/workdocs/contents/todo-list.md";
     const env = {
         ...process.env,
         PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ""}`,
     };
+
+    let owner = "ariroseonline";
+    try {
+        const { stdout } = await execFileAsync(
+            "gh",
+            ["api", "user", "--jq", ".login"],
+            { env, timeout: 5000 },
+        );
+        const login = stdout.trim();
+        if (login) owner = login;
+    } catch {}
+
+    const repoPath = `repos/${owner}/workdocs/contents/todo-list.md`;
 
     let existingSha = null;
     try {
@@ -634,14 +645,6 @@ export async function backupListToWorkdocs(listId = "default") {
         "branch=main",
         "-f",
         `content=${contentBase64}`,
-        "-f",
-        "committer[name]=Ari Rose",
-        "-f",
-        "committer[email]=ariroseonline@github.com",
-        "-f",
-        "author[name]=Ari Rose",
-        "-f",
-        "author[email]=ariroseonline@github.com",
     ];
     if (existingSha) {
         args.push("-f", `sha=${existingSha}`);
@@ -653,7 +656,7 @@ export async function backupListToWorkdocs(listId = "default") {
         ok: true,
         url:
             parsed.content?.html_url ||
-            "https://github.com/ariroseonline/workdocs/blob/main/todo-list.md",
+            `https://github.com/${owner}/workdocs/blob/main/todo-list.md`,
         commitSha: parsed.commit?.sha || null,
     };
 }

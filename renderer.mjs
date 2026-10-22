@@ -754,7 +754,7 @@ function renderHtml() {
             <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/>
           </svg>
         </button>
-        <button type="button" id="backup-btn" class="history-btn" title="Backup todo feed to ariroseonline/workdocs (todo-list.md)" aria-label="Backup todo feed to workdocs">
+        <button type="button" id="backup-btn" class="history-btn" title="Backup todo feed to workdocs (todo-list.md)" aria-label="Backup todo feed to workdocs">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
             <path d="M12 12v9"/>
@@ -2060,7 +2060,7 @@ function renderHtml() {
         if (res.ok && data.ok) {
           backupBtn.classList.add("backup-success");
           backupBtn.textContent = "✓";
-          backupBtn.title = "Backed up to ariroseonline/workdocs (todo-list.md)";
+          backupBtn.title = "Backed up to workdocs (todo-list.md)";
         } else {
           backupBtn.classList.add("backup-error");
           backupBtn.textContent = "!";
@@ -2073,8 +2073,7 @@ function renderHtml() {
         setTimeout(() => {
           backupBtn.classList.remove("backup-success", "backup-error");
           backupBtn.innerHTML = defaultBackupSvg;
-          backupBtn.title =
-            "Backup todo feed to ariroseonline/workdocs (todo-list.md)";
+          backupBtn.title = "Backup todo feed to workdocs (todo-list.md)";
         }, 2000);
       }
     });
