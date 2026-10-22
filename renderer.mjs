@@ -110,9 +110,14 @@ function renderHtml() {
       font-size: 26px;
       font-weight: 400;
       font-synthesis: none;
-      letter-spacing: -0.04em;
-      font-kerning: normal;
       line-height: 28px;
+      display: inline-flex;
+      align-items: baseline;
+    }
+    .title-char {
+      display: inline-block;
+      transform-origin: center 70%;
+      margin-right: -0.3px;
     }
     .title-scribble {
       margin-top: -31px;
@@ -1437,10 +1442,37 @@ function renderHtml() {
       window.addEventListener("pointercancel", onPointerUp);
     }
 
+    const CHAR_TRANSFORMS = [
+      "rotate(-5.5deg) translateY(0px)",
+      "rotate(4.5deg) translateY(1px) scale(0.97)",
+      "rotate(-3.5deg) translateY(-1px)",
+      "rotate(6deg) translateY(0.5px) scale(1.03)",
+      "rotate(-5deg) translateY(1.5px) scale(0.95)",
+      "rotate(3.5deg) translateY(-0.5px)",
+      "rotate(-4.5deg) translateY(0px)",
+      "rotate(6.5deg) translateY(1px)",
+    ];
+
+    function renderTitleWordmark(text) {
+      const str = text || "Todoodle";
+      if (titleEl.dataset.renderedText === str) return;
+      titleEl.dataset.renderedText = str;
+      titleEl.setAttribute("aria-label", str);
+      titleEl.innerHTML = "";
+      Array.from(str).forEach((ch, idx) => {
+        const s = document.createElement("span");
+        s.className = "title-char";
+        s.setAttribute("aria-hidden", "true");
+        s.textContent = ch === " " ? "\u00A0" : ch;
+        s.style.transform = CHAR_TRANSFORMS[idx % CHAR_TRANSFORMS.length];
+        titleEl.appendChild(s);
+      });
+    }
+
     function render(state) {
       latestState = state;
       if (editingId) return;
-      titleEl.textContent = state.title || "Todoodle";
+      renderTitleWordmark(state.title || "Todoodle");
       undoBtn.disabled = !state.canUndo;
       redoBtn.disabled = !state.canRedo;
       if (!isBackingUp) {
@@ -2346,6 +2378,8 @@ function renderHtml() {
         }
       } catch {}
     });
+
+    renderTitleWordmark("Todoodle");
 
     fetch("/api/state")
       .then((r) => r.json())
