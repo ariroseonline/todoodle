@@ -282,6 +282,47 @@ function getHistoryFilePath(listId) {
     return join(artifactsDir, `${sanitizeListId(listId)}.history.json`);
 }
 
+function getSettingsFilePath() {
+    return join(artifactsDir, "settings.json");
+}
+
+export function normalizeRepoSlug(input) {
+    const raw = String(input || "").trim();
+    if (!raw) return "";
+    const urlMatch = raw.match(
+        /^https?:\/\/[^/]+\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git|\/.*)?$/i,
+    );
+    if (urlMatch) {
+        return `${urlMatch[1]}/${urlMatch[2]}`;
+    }
+    const slugMatch = raw.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+    if (slugMatch) {
+        return `${slugMatch[1]}/${slugMatch[2]}`;
+    }
+    return "";
+}
+
+export async function loadSettings() {
+    try {
+        const raw = await readFile(getSettingsFilePath(), "utf8");
+        const parsed = JSON.parse(raw);
+        return {
+            backupRepo: normalizeRepoSlug(parsed?.backupRepo),
+        };
+    } catch {
+        return { backupRepo: "" };
+    }
+}
+
+export async function saveSettings(nextSettings) {
+    await mkdir(artifactsDir, { recursive: true });
+    const payload = {
+        backupRepo: normalizeRepoSlug(nextSettings?.backupRepo),
+    };
+    await writeFile(getSettingsFilePath(), JSON.stringify(payload, null, 2), "utf8");
+    return payload;
+}
+
 const MAX_HISTORY = 50;
 
 async function loadHistory(listId = "default") {
@@ -348,7 +389,10 @@ function normalizeDaysAndItems(parsed) {
 export async function loadList(listId = "default") {
     const id = sanitizeListId(listId);
     const filePath = getFilePath(id);
-    const history = await loadHistory(id);
+    const [history, settings] = await Promise.all([
+        loadHistory(id),
+        loadSettings(),
+    ]);
     try {
         const raw = await readFile(filePath, "utf8");
         const parsed = JSON.parse(raw);
@@ -363,6 +407,7 @@ export async function loadList(listId = "default") {
             items,
             canUndo: history.undoStack.length > 0,
             canRedo: history.redoStack.length > 0,
+            backupRepo: settings.backupRepo || "",
         };
         if (!Array.isArray(parsed.days) || !parsed.days[0]?.id) {
             await saveList(state, { recordHistory: false });
@@ -377,6 +422,7 @@ export async function loadList(listId = "default") {
             items: [],
             canUndo: history.undoStack.length > 0,
             canRedo: history.redoStack.length > 0,
+            backupRepo: settings.backupRepo || "",
         };
     }
 }
@@ -412,11 +458,15 @@ export async function saveList(state, { recordHistory = true } = {}) {
     }
 
     await writeFile(getFilePath(id), JSON.stringify(payload, null, 2), "utf8");
-    const history = await loadHistory(id);
+    const [history, settings] = await Promise.all([
+        loadHistory(id),
+        loadSettings(),
+    ]);
     return {
         ...payload,
         canUndo: history.undoStack.length > 0,
         canRedo: history.redoStack.length > 0,
+        backupRepo: settings.backupRepo || "",
     };
 }
 
@@ -602,7 +652,17 @@ export function formatTodoFeedMarkdown(state) {
 }
 
 export async function backupListToWorkdocs(listId = "default") {
-    const state = await loadList(listId);
+    const [state, settings] = await Promise.all([
+        loadList(listId),
+        loadSettings(),
+    ]);
+    const backupRepo = normalizeRepoSlug(settings.backupRepo);
+    if (!backupRepo) {
+        throw new Error(
+            "No backup repository configured. Open Settings to set a GitHub repository (owner/repo).",
+        );
+    }
+
     const markdown = formatTodoFeedMarkdown(state);
     const contentBase64 = Buffer.from(markdown, "utf8").toString("base64");
     const env = {
@@ -610,18 +670,7 @@ export async function backupListToWorkdocs(listId = "default") {
         PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ""}`,
     };
 
-    let owner = "ariroseonline";
-    try {
-        const { stdout } = await execFileAsync(
-            "gh",
-            ["api", "user", "--jq", ".login"],
-            { env, timeout: 5000 },
-        );
-        const login = stdout.trim();
-        if (login) owner = login;
-    } catch {}
-
-    const repoPath = `repos/${owner}/workdocs/contents/todo-list.md`;
+    const repoPath = `repos/${backupRepo}/contents/todo-list.md`;
 
     let existingSha = null;
     try {
@@ -654,9 +703,10 @@ export async function backupListToWorkdocs(listId = "default") {
     const parsed = JSON.parse(stdout);
     return {
         ok: true,
+        repo: backupRepo,
         url:
             parsed.content?.html_url ||
-            `https://github.com/${owner}/workdocs/blob/main/todo-list.md`,
+            `https://github.com/${backupRepo}/blob/main/todo-list.md`,
         commitSha: parsed.commit?.sha || null,
     };
 }

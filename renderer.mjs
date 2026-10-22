@@ -4,6 +4,7 @@ import {
     saveList,
     undoList,
     redoList,
+    saveSettings,
     normalizeItem,
     resolvePrMetadata,
     searchAccessiblePrs,
@@ -110,8 +111,52 @@ function renderHtml() {
       transition: opacity 0.12s ease;
     }
     .top-bar:hover .top-bar-right,
-    .top-bar:focus-within .top-bar-right {
+    .top-bar:focus-within .top-bar-right,
+    .top-bar-right.force-visible {
       opacity: 1;
+    }
+    .settings-panel {
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border: 1px solid var(--border-color-default, #d0d7de);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--text-color-default, #1f2328) 3%, var(--background-color-default, #ffffff));
+    }
+    .settings-label {
+      display: block;
+      font-size: 12px;
+      font-weight: var(--font-weight-semibold, 600);
+      color: var(--text-color-default, #1f2328);
+      margin-bottom: 4px;
+    }
+    .settings-help {
+      font-size: 11.5px;
+      line-height: 16px;
+      color: var(--text-color-muted, #656d76);
+      margin: 0 0 8px 0;
+    }
+    .settings-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .settings-input {
+      flex: 1;
+      padding: 5px 9px;
+      border: 1px solid var(--border-color-default, #d0d7de);
+      border-radius: 6px;
+      background: var(--background-color-default, #ffffff);
+      color: var(--text-color-default, #1f2328);
+      font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+      font-size: 12px;
+      outline: none;
+    }
+    .settings-input:focus {
+      border-color: var(--color-focus-outline, #0969da);
+    }
+    .history-btn.active {
+      border-color: var(--true-color-blue, #0969da);
+      color: var(--true-color-blue, #0969da);
     }
     .history-btn {
       width: 28px;
@@ -754,26 +799,55 @@ function renderHtml() {
             <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/>
           </svg>
         </button>
-        <button type="button" id="backup-btn" class="history-btn" title="Backup todo feed to workdocs (todo-list.md)" aria-label="Backup todo feed to workdocs">
+        <button type="button" id="backup-btn" class="history-btn" title="Configure a backup repository in Settings first" aria-label="Backup todo feed" disabled>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
             <path d="M12 12v9"/>
             <path d="m16 16-4-4-4 4"/>
           </svg>
         </button>
+        <button type="button" id="settings-btn" class="history-btn" title="Backup settings" aria-label="Settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
         <button type="button" id="new-day-btn" class="new-day-btn">+ New Day</button>
       </div>
     </div>
+    <form id="settings-panel" class="settings-panel" hidden>
+      <label class="settings-label" for="backup-repo-input">Backup GitHub Repository</label>
+      <p class="settings-help">
+        Saves your todo feed as <code>todo-list.md</code> on <code>main</code>. Must be a repository without <code>main</code> branch protection so it can version itself directly.
+      </p>
+      <div class="settings-row">
+        <input
+          type="text"
+          id="backup-repo-input"
+          class="settings-input"
+          placeholder="owner/repo (e.g. username/workdocs)"
+          autocomplete="off"
+        />
+        <button type="submit" class="small-btn primary">Save</button>
+        <button type="button" id="settings-cancel-btn" class="small-btn">Close</button>
+      </div>
+    </form>
     <div id="feed"></div>
   </div>
   <script>
     const titleEl = document.getElementById("list-title");
     const feedEl = document.getElementById("feed");
+    const topBarRight = document.querySelector(".top-bar-right");
     const newDayBtn = document.getElementById("new-day-btn");
     const undoBtn = document.getElementById("undo-btn");
     const redoBtn = document.getElementById("redo-btn");
     const backupBtn = document.getElementById("backup-btn");
+    const settingsBtn = document.getElementById("settings-btn");
+    const settingsPanel = document.getElementById("settings-panel");
+    const backupRepoInput = document.getElementById("backup-repo-input");
+    const settingsCancelBtn = document.getElementById("settings-cancel-btn");
     const defaultBackupSvg = backupBtn.innerHTML;
+    let isBackingUp = false;
 
     let editingId = null;
     let prEditingId = null;
@@ -1245,6 +1319,13 @@ function renderHtml() {
       titleEl.textContent = state.title || "Todo";
       undoBtn.disabled = !state.canUndo;
       redoBtn.disabled = !state.canRedo;
+      if (!isBackingUp) {
+        const hasBackupRepo = Boolean(state.backupRepo);
+        backupBtn.disabled = !hasBackupRepo;
+        backupBtn.title = hasBackupRepo
+          ? "Backup todo feed to " + state.backupRepo + " (todo-list.md)"
+          : "Configure a backup repository in Settings first";
+      }
       feedEl.innerHTML = "";
 
       const days = Array.isArray(state.days) ? state.days : [];
@@ -2046,8 +2127,39 @@ function renderHtml() {
     undoBtn.addEventListener("click", triggerUndo);
     redoBtn.addEventListener("click", triggerRedo);
 
+    settingsBtn.addEventListener("click", () => {
+      const opening = settingsPanel.hidden;
+      settingsPanel.hidden = !opening;
+      settingsBtn.classList.toggle("active", opening);
+      topBarRight.classList.toggle("force-visible", opening);
+      if (opening) {
+        backupRepoInput.value = latestState.backupRepo || "";
+        requestAnimationFrame(() => backupRepoInput.focus());
+      }
+    });
+
+    settingsCancelBtn.addEventListener("click", () => {
+      settingsPanel.hidden = true;
+      settingsBtn.classList.remove("active");
+      topBarRight.classList.remove("force-visible");
+    });
+
+    settingsPanel.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const backupRepo = backupRepoInput.value.trim();
+      settingsPanel.hidden = true;
+      settingsBtn.classList.remove("active");
+      topBarRight.classList.remove("force-visible");
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backupRepo }),
+      });
+    });
+
     backupBtn.addEventListener("click", async () => {
-      if (backupBtn.disabled) return;
+      if (backupBtn.disabled || isBackingUp || !latestState.backupRepo) return;
+      isBackingUp = true;
       backupBtn.disabled = true;
       backupBtn.classList.remove("backup-success", "backup-error");
       try {
@@ -2060,7 +2172,7 @@ function renderHtml() {
         if (res.ok && data.ok) {
           backupBtn.classList.add("backup-success");
           backupBtn.textContent = "✓";
-          backupBtn.title = "Backed up to workdocs (todo-list.md)";
+          backupBtn.title = "Backed up to " + (data.repo || latestState.backupRepo) + " (todo-list.md)";
         } else {
           backupBtn.classList.add("backup-error");
           backupBtn.textContent = "!";
@@ -2069,11 +2181,11 @@ function renderHtml() {
         backupBtn.classList.add("backup-error");
         backupBtn.textContent = "!";
       } finally {
-        backupBtn.disabled = false;
+        isBackingUp = false;
         setTimeout(() => {
           backupBtn.classList.remove("backup-success", "backup-error");
           backupBtn.innerHTML = defaultBackupSvg;
-          backupBtn.title = "Backup todo feed to workdocs (todo-list.md)";
+          render(latestState);
         }, 2000);
       }
     });
@@ -2218,6 +2330,15 @@ export async function ensureServer(instanceId, listId) {
 
         if (req.method === "POST" && url.pathname === "/api/redo") {
             await redoList(currentListId);
+            await broadcastListUpdate(currentListId);
+            res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: true }));
+            return;
+        }
+
+        if (req.method === "POST" && url.pathname === "/api/settings") {
+            const body = await readJsonBody(req);
+            await saveSettings({ backupRepo: body.backupRepo });
             await broadcastListUpdate(currentListId);
             res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ ok: true }));
