@@ -106,9 +106,10 @@ function renderHtml() {
     }
     h1 {
       margin: 0;
-      font-family: "Marker Felt", "Chalkboard SE", "Bradley Hand", "Comic Sans MS", cursive;
+      font-family: "MarkerFelt-Thin", "Marker Felt", "Chalkboard SE", "Bradley Hand", "Comic Sans MS", cursive;
       font-size: 26px;
-      font-weight: 700;
+      font-weight: 400;
+      font-synthesis: none;
       letter-spacing: -0.04em;
       font-kerning: normal;
       line-height: 28px;
