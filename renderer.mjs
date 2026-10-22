@@ -117,7 +117,7 @@ function renderHtml() {
     .title-scribble {
       margin-top: -31px;
       margin-left: 2px;
-      width: 270px;
+      width: 208px;
       height: 40px;
       overflow: visible;
       color: var(--true-color-blue, #0969da);
@@ -464,13 +464,70 @@ function renderHtml() {
       background: color-mix(in srgb, var(--true-color-blue, #0969da) 6%, transparent);
       color: var(--true-color-blue, #0969da);
     }
-    li.todo-item input[type="checkbox"].todo-checkbox {
-      width: 16px;
-      height: 16px;
-      margin: 2px 0 0 0;
+    .doodle-checkbox {
+      width: 18px;
+      height: 18px;
+      margin: 1px 0 0 0;
+      padding: 0;
+      background: transparent;
+      border: none;
       cursor: pointer;
-      accent-color: var(--color-focus-outline, #0969da);
       flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-color-muted, #656d76);
+      transition: transform 0.15s ease, color 0.15s ease;
+    }
+    .doodle-checkbox:hover {
+      color: var(--text-color-default, #1f2328);
+      transform: scale(1.06) rotate(-2deg);
+    }
+    .doodle-checkbox svg {
+      width: 18px;
+      height: 18px;
+      overflow: visible;
+    }
+    .doodle-box-path {
+      stroke: currentColor;
+      stroke-width: 1.65;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: transparent;
+      transition: stroke 0.18s ease, fill 0.18s ease;
+    }
+    .doodle-checkbox.checked {
+      color: var(--true-color-blue, #0969da);
+    }
+    .doodle-checkbox.checked .doodle-box-path {
+      fill: color-mix(in srgb, var(--true-color-blue, #0969da) 10%, transparent);
+    }
+    .doodle-check-path {
+      stroke: var(--true-color-blue, #0969da);
+      stroke-width: 2.25;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      stroke-dasharray: 24;
+      stroke-dashoffset: 24;
+    }
+    .doodle-checkbox.checked .doodle-check-path {
+      stroke-dashoffset: 0;
+    }
+    @keyframes doodleCheckPop {
+      0% { transform: scale(0.86) rotate(-4deg); }
+      55% { transform: scale(1.12) rotate(2deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    @keyframes doodleCheckDraw {
+      0% { stroke-dashoffset: 24; }
+      100% { stroke-dashoffset: 0; }
+    }
+    .doodle-checkbox.just-checked {
+      animation: doodleCheckPop 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .doodle-checkbox.just-checked .doodle-check-path {
+      animation: doodleCheckDraw 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     }
     .todo-blocked-emoji {
       width: 16px;
@@ -807,8 +864,8 @@ function renderHtml() {
     <div class="top-bar">
       <div class="title-wrap">
         <h1 id="list-title">Todoodle</h1>
-        <svg class="title-scribble" viewBox="0 0 280 42" fill="none" aria-hidden="true">
-          <path d="M 2 37 C 24 33, 44 40, 66 35 C 76 33, 82 36, 88 34 C 100 31, 106 21, 98 21 C 91 21, 93 34, 112 29 C 128 25, 138 9, 126 8 C 114 7, 116 28, 144 22 C 166 17, 182 -4, 165 -5 C 148 -6, 150 22, 188 14 C 218 8, 240 -18, 216 -19 C 192 -20, 196 15, 244 4 C 258 1, 268 -6, 276 -11" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+        <svg class="title-scribble" viewBox="0 0 216 42" fill="none" aria-hidden="true">
+          <path d="M 2 37 C 24 33, 44 40, 66 35 C 76 33, 82 36, 88 34 C 100 31, 106 21, 98 21 C 91 21, 93 34, 112 29 C 128 25, 138 9, 126 8 C 114 7, 116 28, 144 22 C 166 17, 182 -4, 165 -5 C 148 -6, 150 22, 188 14 C 198 12, 206 7, 212 3" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
       <div class="top-bar-right">
@@ -886,6 +943,7 @@ function renderHtml() {
     let cachedPrResults = null;
     let confirmDeleteDayId = null;
     let confirmDeleteItemId = null;
+    let justCheckedId = null;
     const openReportsByDay = new Set();
     const copiedStateByDay = new Map();
     let latestState = { title: "Todoodle", days: [], items: [], canUndo: false, canRedo: false };
@@ -1110,6 +1168,41 @@ function renderHtml() {
         }
       });
       editInput.addEventListener("blur", () => commit(true));
+    }
+
+    function createDoodleCheckbox(item) {
+      const isChecked = Boolean(item.completed);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("role", "checkbox");
+      btn.setAttribute("aria-checked", String(isChecked));
+      btn.setAttribute("aria-label", "Toggle " + item.text);
+      btn.className =
+        "doodle-checkbox" +
+        (isChecked ? " checked" : "") +
+        (isChecked && justCheckedId === item.id ? " just-checked" : "");
+      btn.innerHTML =
+        '<svg viewBox="0 0 20 20" aria-hidden="true">' +
+        '<path class="doodle-box-path" d="M 3.3 4.2 C 7.6 3.4, 13.7 3.6, 16.9 4.1 C 17.5 7.9, 17.2 13.4, 16.6 16.8 C 12.4 17.4, 6.7 17.1, 3.5 16.6 C 2.9 12.9, 3.1 7.5, 3.3 4.2 Z"/>' +
+        '<path class="doodle-check-path" d="M 5.4 10.6 C 6.8 12.1, 8.1 13.8, 9.1 14.8 C 11.4 10.9, 14.5 6.4, 18.4 3.1"/>' +
+        "</svg>";
+      btn.addEventListener("click", async () => {
+        const nextCompleted = !item.completed;
+        item.completed = nextCompleted;
+        justCheckedId = nextCompleted ? item.id : null;
+        render(latestState);
+        await fetch("/api/toggle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: item.id, completed: nextCompleted }),
+        });
+        if (justCheckedId === item.id) {
+          setTimeout(() => {
+            if (justCheckedId === item.id) justCheckedId = null;
+          }, 350);
+        }
+      });
+      return btn;
     }
 
     function createPrIconSvg() {
@@ -1540,19 +1633,7 @@ function renderHtml() {
               });
               leadControl = upcomingLead;
             } else {
-              const checkbox = document.createElement("input");
-              checkbox.type = "checkbox";
-              checkbox.className = "todo-checkbox";
-              checkbox.checked = Boolean(item.completed);
-              checkbox.addEventListener("change", async () => {
-                li.classList.toggle("completed", checkbox.checked);
-                await fetch("/api/toggle", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ id: item.id, completed: checkbox.checked }),
-                });
-              });
-              leadControl = checkbox;
+              leadControl = createDoodleCheckbox(item);
             }
 
             const mainCol = document.createElement("div");
