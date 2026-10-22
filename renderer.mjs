@@ -848,6 +848,9 @@ export function renderHtml() {
       font-size: 12px;
       font-weight: var(--font-weight-semibold, 600);
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
     }
     .small-btn.primary {
       border-color: var(--true-color-blue, #0969da);
@@ -1402,6 +1405,19 @@ export function renderHtml() {
       span.innerHTML =
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>' +
+        "</svg>";
+      return span;
+    }
+
+    function createCopyIconSvg() {
+      const span = document.createElement("span");
+      span.style.display = "inline-flex";
+      span.style.alignItems = "center";
+      span.style.justifyContent = "center";
+      // Lucide copy icon
+      span.innerHTML =
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>' +
         "</svg>";
       return span;
     }
@@ -2357,9 +2373,14 @@ export function renderHtml() {
             const copyBtn = document.createElement("button");
             copyBtn.type = "button";
             copyBtn.className = "small-btn primary";
-            copyBtn.textContent = copiedStateByDay.get(dayObj.id)
-              ? "Copied ✓"
-              : "Copy for Slack";
+            if (copiedStateByDay.get(dayObj.id)) {
+              copyBtn.textContent = "Copied ✓";
+            } else {
+              copyBtn.appendChild(createCopyIconSvg());
+              const copyText = document.createElement("span");
+              copyText.textContent = "Copy";
+              copyBtn.appendChild(copyText);
+            }
             copyBtn.addEventListener("click", () => copyReportToClipboard(dayObj));
 
             const closeBtn = document.createElement("button");
