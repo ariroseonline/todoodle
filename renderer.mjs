@@ -97,12 +97,12 @@ function renderHtml() {
       min-height: 30px;
     }
     .title-wrap {
-      display: inline-flex;
-      flex-direction: column;
-      align-items: flex-start;
+      position: relative;
+      display: inline-block;
       transform: rotate(-1.5deg);
       transform-origin: left center;
       user-select: none;
+      margin-bottom: 4px;
     }
     h1 {
       margin: 0;
@@ -115,9 +115,11 @@ function renderHtml() {
       line-height: 28px;
     }
     .title-scribble {
-      margin-top: -1px;
-      margin-left: 1px;
-      width: 82%;
+      position: absolute;
+      left: 1px;
+      right: 1px;
+      bottom: -5px;
+      width: calc(100% - 2px);
       height: 8px;
       overflow: visible;
       color: var(--true-color-blue, #0969da);
