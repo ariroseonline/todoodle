@@ -107,9 +107,11 @@ function renderHtml() {
     h1 {
       margin: 0;
       font-family: "Marker Felt", "Chalkboard SE", "Bradley Hand", "Comic Sans MS", cursive;
-      font-size: 26px;
+      font-size: 27px;
       font-weight: 700;
-      letter-spacing: 0.02em;
+      letter-spacing: -2.2px;
+      font-variant-ligatures: none;
+      font-kerning: normal;
       line-height: 28px;
     }
     .title-scribble {
