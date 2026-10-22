@@ -116,8 +116,8 @@ function renderHtml() {
     }
     .title-scribble {
       margin-top: -1px;
-      margin-left: 2px;
-      width: 96%;
+      margin-left: 1px;
+      width: 82%;
       height: 8px;
       overflow: visible;
       color: var(--true-color-blue, #0969da);
@@ -500,11 +500,9 @@ function renderHtml() {
       align-items: center;
       justify-content: center;
       color: var(--text-color-muted, #656d76);
-      transition: transform 0.15s ease, color 0.15s ease;
     }
     .doodle-checkbox:hover {
       color: var(--text-color-default, #1f2328);
-      transform: scale(1.06) rotate(-2deg);
     }
     .doodle-checkbox svg.doodle-box-svg {
       width: 18px;
@@ -534,26 +532,12 @@ function renderHtml() {
     .doodle-checkbox.checked .doodle-check-path {
       stroke-dashoffset: 0;
     }
-    @keyframes doodleCheckPop {
-      0% {
-        transform: scale(0.86) rotate(-4deg);
-      }
-      45% {
-        transform: scale(1.12) rotate(2deg);
-      }
-      100% {
-        transform: scale(1) rotate(0deg);
-      }
-    }
     @keyframes doodleCheckDraw {
       0% { stroke-dashoffset: 24; }
       100% { stroke-dashoffset: 0; }
     }
-    .doodle-checkbox.just-checked {
-      animation: doodleCheckPop 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    }
     .doodle-checkbox.just-checked .doodle-check-path {
-      animation: doodleCheckDraw 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation: doodleCheckDraw 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     }
     .star-burst {
       position: absolute;
@@ -2468,18 +2452,14 @@ function renderHtml() {
       .then((r) => r.json())
       .then(render);
 
-    const events = new EventSource("/events");
+      const events = new EventSource("/events");
     events.onmessage = (event) => {
       try {
         const next = JSON.parse(event.data);
         latestState = next;
         if (Date.now() < suppressRenderUntil) {
-          const delay = Math.max(20, suppressRenderUntil - Date.now());
-          setTimeout(() => {
-            if (Date.now() >= suppressRenderUntil) {
-              render(latestState);
-            }
-          }, delay);
+          undoBtn.disabled = !next.canUndo;
+          redoBtn.disabled = !next.canRedo;
           return;
         }
         render(next);
