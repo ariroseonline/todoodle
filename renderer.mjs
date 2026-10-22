@@ -70,7 +70,7 @@ function renderHtml() {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Todo</title>
+  <title>Todoodle</title>
   <style>
     * {
       box-sizing: border-box;
@@ -96,12 +96,28 @@ function renderHtml() {
       margin-bottom: 18px;
       min-height: 30px;
     }
+    .title-wrap {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-start;
+      transform: rotate(-1.5deg);
+      transform-origin: left center;
+      user-select: none;
+    }
     h1 {
       margin: 0;
-      font-family: var(--font-sans-display, var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif));
-      font-size: var(--text-title-medium, 20px);
-      font-weight: var(--font-weight-semibold, 600);
-      line-height: var(--leading-title-medium, 26px);
+      font-family: "Marker Felt", "Chalkboard SE", "Bradley Hand", "Comic Sans MS", cursive;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 28px;
+    }
+    .title-scribble {
+      margin-top: -1px;
+      width: 100%;
+      height: 8px;
+      overflow: visible;
+      color: var(--true-color-blue, #0969da);
     }
     .top-bar-right {
       display: flex;
@@ -117,17 +133,24 @@ function renderHtml() {
     }
     .settings-panel {
       margin-bottom: 18px;
-      padding: 12px 14px;
+      padding: 10px 12px 12px;
       border: 1px solid var(--border-color-default, #d0d7de);
       border-radius: 8px;
       background: color-mix(in srgb, var(--text-color-default, #1f2328) 3%, var(--background-color-default, #ffffff));
+    }
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 2px;
     }
     .settings-label {
       display: block;
       font-size: 12px;
       font-weight: var(--font-weight-semibold, 600);
       color: var(--text-color-default, #1f2328);
-      margin-bottom: 4px;
+      margin: 0;
     }
     .settings-help {
       font-size: 11.5px;
@@ -785,7 +808,12 @@ function renderHtml() {
 <body>
   <div class="container">
     <div class="top-bar">
-      <h1 id="list-title">Todo</h1>
+      <div class="title-wrap">
+        <h1 id="list-title">Todoodle</h1>
+        <svg class="title-scribble" viewBox="0 0 120 8" preserveAspectRatio="none" fill="none" aria-hidden="true">
+          <path d="M2 5.5 C 22 1.5, 42 7.5, 62 3.5 C 82 -0.5, 100 6.5, 118 3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+      </div>
       <div class="top-bar-right">
         <button type="button" id="undo-btn" class="history-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -816,20 +844,26 @@ function renderHtml() {
       </div>
     </div>
     <form id="settings-panel" class="settings-panel" hidden>
-      <label class="settings-label" for="backup-repo-input">Backup GitHub Repository</label>
+      <div class="settings-header">
+        <label class="settings-label" for="backup-repo-input">Backup GitHub Destination</label>
+        <button type="button" id="settings-cancel-btn" class="icon-btn" title="Close settings" aria-label="Close settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
       <p class="settings-help">
-        Saves your todo feed as <code>todo-list.md</code> on <code>main</code>. Must be a repository without <code>main</code> branch protection so it can version itself directly.
+        Saves your todo feed as <code>todoodle.md</code> on <code>main</code> (accepts <code>owner/repo</code>, a repo URL, or a subfolder URL). Must be a repository without <code>main</code> branch protection so it can version itself directly.
       </p>
       <div class="settings-row">
         <input
           type="text"
           id="backup-repo-input"
           class="settings-input"
-          placeholder="owner/repo (e.g. username/workdocs)"
+          placeholder="owner/repo or repo/subfolder URL"
           autocomplete="off"
         />
         <button type="submit" class="small-btn primary">Save</button>
-        <button type="button" id="settings-cancel-btn" class="small-btn">Close</button>
       </div>
     </form>
     <div id="feed"></div>
@@ -857,7 +891,7 @@ function renderHtml() {
     let confirmDeleteItemId = null;
     const openReportsByDay = new Set();
     const copiedStateByDay = new Map();
-    let latestState = { title: "Todo", days: [], items: [], canUndo: false, canRedo: false };
+    let latestState = { title: "Todoodle", days: [], items: [], canUndo: false, canRedo: false };
 
     function focusDayInput(dayId) {
       const targetDayId =
@@ -1316,14 +1350,14 @@ function renderHtml() {
     function render(state) {
       latestState = state;
       if (editingId) return;
-      titleEl.textContent = state.title || "Todo";
+      titleEl.textContent = state.title || "Todoodle";
       undoBtn.disabled = !state.canUndo;
       redoBtn.disabled = !state.canRedo;
       if (!isBackingUp) {
         const hasBackupRepo = Boolean(state.backupRepo);
         backupBtn.disabled = !hasBackupRepo;
         backupBtn.title = hasBackupRepo
-          ? "Backup todo feed to " + state.backupRepo + " (todo-list.md)"
+          ? "Backup todo feed to " + state.backupRepo + " (todoodle.md)"
           : "Configure a backup repository in Settings first";
       }
       feedEl.innerHTML = "";
@@ -2172,7 +2206,7 @@ function renderHtml() {
         if (res.ok && data.ok) {
           backupBtn.classList.add("backup-success");
           backupBtn.textContent = "✓";
-          backupBtn.title = "Backed up to " + (data.repo || latestState.backupRepo) + " (todo-list.md)";
+          backupBtn.title = "Backed up to " + (data.repo || latestState.backupRepo) + " (todoodle.md)";
         } else {
           backupBtn.classList.add("backup-error");
           backupBtn.textContent = "!";

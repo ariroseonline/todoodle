@@ -1,6 +1,6 @@
-# Todo Canvas
+# Todoodle
 
-A GitHub Copilot app canvas extension (`todo-list`) for managing a reverse-chronological daily todo feed.
+A GitHub Copilot app canvas extension (`todoodle`) for managing a reverse-chronological daily todo feed.
 
 ## Features
 
@@ -9,8 +9,8 @@ A GitHub Copilot app canvas extension (`todo-list`) for managing a reverse-chron
 - **Drag and Drop**: Reorder todos within a day or move them across days with a live drop indicator and floating ghost card.
 - **GitHub PR Picker**: Search and attach multiple accessible PRs (`gh search prs`) with automatic draft detection.
 - **Slack Status Report**: Expand and copy a formatted Slack status report (`*Blocked*`, `*Completed*`, `*In progress*`, `*Not addressed today*`, `*Upcoming*`) with rich HTML links.
-- **Undo / Redo & GitHub Backup**: Persistent undo/redo history (`Ctrl+Z` / `Ctrl+Shift+Z` or header buttons) and one-click Markdown backup (`todo-list.md` on `main`) to a repository configured in Settings.
+- **Undo / Redo & GitHub Backup**: Persistent undo/redo history (`Ctrl+Z` / `Ctrl+Shift+Z` or header buttons) and one-click Markdown backup (`todoodle.md` on `main`) to a repository or subfolder configured in Settings.
 
 ## Installation
 
-Place in `~/.copilot/extensions/todo-list/` (or install via the `install_extension` tool pointing to `https://github.com/ariroseonline/todo-canvas`).
+Place in `~/.copilot/extensions/todoodle/` (or install via the `install_extension` tool pointing to `https://github.com/ariroseonline/todoodle`).

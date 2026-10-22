@@ -47,10 +47,10 @@ const prInputSchema = {
 await joinSession({
     canvases: [
         createCanvas({
-            id: "todo-list",
-            displayName: "Todo",
+            id: "todoodle",
+            displayName: "Todoodle",
             description:
-                "Daily feed todo list canvas with manual New Day blocks, random emojis, checkboxes, in-progress indicators, PR attachments, and Slack status reports.",
+                "Todoodle daily feed todo list canvas with manual New Day blocks, random emojis, checkboxes, in-progress/blocked/upcoming states, PR attachments, and Slack status reports.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -212,7 +212,7 @@ await joinSession({
                 {
                     name: "backup_to_workdocs",
                     description:
-                        "Save a Markdown representation of the todo feed to todo-list.md on main in ariroseonline/workdocs.",
+                        "Save a Markdown representation of the todo feed to todoodle.md on main in the configured backup repository.",
                     inputSchema: {
                         type: "object",
                         additionalProperties: false,
