@@ -881,7 +881,13 @@ export function renderHtml() {
       align-items: center;
       gap: 6px;
     }
-    .status-report-pre {
+    .small-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    .status-report-editor {
+      display: block;
+      width: 100%;
       margin: 0;
       padding: 10px 12px;
       border-radius: 6px;
@@ -890,9 +896,14 @@ export function renderHtml() {
       font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
       font-size: 12px;
       line-height: 18px;
-      white-space: pre-wrap;
-      word-break: break-word;
       color: var(--text-color-default, #1f2328);
+      resize: vertical;
+      outline: none;
+      min-height: 84px;
+    }
+    .status-report-editor:focus {
+      border-color: var(--color-focus-outline, #0969da);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus-outline, #0969da) 25%, transparent);
     }
     .empty-state {
       color: var(--text-color-muted, #656d76);
@@ -994,6 +1005,7 @@ export function renderHtml() {
     let justCheckedId = null;
     let suppressRenderUntil = 0;
     const openReportsByDay = new Set();
+    const customReportsByDay = new Map();
     const copiedStateByDay = new Map();
     let latestState = { title: "Todoodle", days: [], items: [], canUndo: false, canRedo: false };
 
@@ -1128,6 +1140,58 @@ export function renderHtml() {
       };
     }
 
+    function plainReportToHtml(plainText, dayItems) {
+      // Map known PR labels to their URLs so custom-edited reports still copy clickable PR links
+      const prUrlByLabel = new Map();
+      for (const it of dayItems || []) {
+        for (const p of getItemPrs(it)) {
+          if (p.label && p.url) prUrlByLabel.set(p.label, p.url);
+        }
+      }
+
+      function linkifyAndFormatLine(text) {
+        let escaped = escapeHtml(text);
+        escaped = escaped.replace(/\*([^*]+)\*/g, "<b>$1</b>");
+        for (const [label, url] of prUrlByLabel.entries()) {
+          const escLabel = escapeHtml(label);
+          const escUrl = escapeHtml(url);
+          escaped = escaped.split(escLabel).join('<a href="' + escUrl + '">' + escLabel + "</a>");
+        }
+        return escaped;
+      }
+
+      const lines = String(plainText || "").split("\n");
+      const htmlParts = [];
+      let inList = false;
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) {
+          if (inList) {
+            htmlParts.push("</ul>");
+            inList = false;
+          }
+          continue;
+        }
+        const bulletMatch = line.match(/^(?:•|-|\*)\s+(.+)$/);
+        if (bulletMatch) {
+          if (!inList) {
+            htmlParts.push("<ul>");
+            inList = true;
+          }
+          htmlParts.push("<li>" + linkifyAndFormatLine(bulletMatch[1]) + "</li>");
+        } else {
+          if (inList) {
+            htmlParts.push("</ul>");
+            inList = false;
+          }
+          htmlParts.push("<p>" + linkifyAndFormatLine(line) + "</p>");
+        }
+      }
+      if (inList) htmlParts.push("</ul>");
+      return htmlParts.join("");
+    }
+
     async function copyReportToClipboard(dayObj) {
       let currentItems = (latestState.items || []).filter(
         (it) => it.dayId === dayObj.id
@@ -1146,20 +1210,27 @@ export function renderHtml() {
           }
         }
       } catch {}
-      const report = buildSlackStatusReport(dayObj, currentItems);
+      const generated = buildSlackStatusReport(dayObj, currentItems);
+      const hasCustom = customReportsByDay.has(dayObj.id);
+      const plainToCopy = hasCustom
+        ? customReportsByDay.get(dayObj.id)
+        : generated.plain;
+      const htmlToCopy = hasCustom
+        ? plainReportToHtml(plainToCopy, currentItems)
+        : generated.html;
       try {
         if (navigator.clipboard && window.ClipboardItem) {
           const item = new ClipboardItem({
-            "text/plain": new Blob([report.plain], { type: "text/plain" }),
-            "text/html": new Blob([report.html], { type: "text/html" }),
+            "text/plain": new Blob([plainToCopy], { type: "text/plain" }),
+            "text/html": new Blob([htmlToCopy], { type: "text/html" }),
           });
           await navigator.clipboard.write([item]);
         } else {
-          await navigator.clipboard.writeText(report.plain);
+          await navigator.clipboard.writeText(plainToCopy);
         }
       } catch {
         try {
-          await navigator.clipboard.writeText(report.plain);
+          await navigator.clipboard.writeText(plainToCopy);
         } catch {}
       }
       copiedStateByDay.set(dayObj.id, true);
@@ -2230,7 +2301,7 @@ export function renderHtml() {
           const reportBtnLabel = document.createElement("span");
           reportBtnLabel.textContent = openReportsByDay.has(dayObj.id)
             ? "Hide Slack status report"
-            : "Create Slack status report";
+            : "Show Slack status report";
           reportBtn.appendChild(reportBtnLabel);
           reportBtn.addEventListener("click", async () => {
             if (openReportsByDay.has(dayObj.id)) {
@@ -2257,6 +2328,13 @@ export function renderHtml() {
 
           if (openReportsByDay.has(dayObj.id)) {
             const report = buildSlackStatusReport(dayObj, dayItems);
+            const currentText = customReportsByDay.has(dayObj.id)
+              ? customReportsByDay.get(dayObj.id)
+              : report.plain;
+            const isModified =
+              customReportsByDay.has(dayObj.id) &&
+              customReportsByDay.get(dayObj.id) !== report.plain;
+
             const reportBox = document.createElement("div");
             reportBox.className = "status-report-box";
 
@@ -2269,6 +2347,12 @@ export function renderHtml() {
 
             const reportActions = document.createElement("div");
             reportActions.className = "status-report-actions";
+
+            const restoreBtn = document.createElement("button");
+            restoreBtn.type = "button";
+            restoreBtn.className = "small-btn";
+            restoreBtn.textContent = "Restore original";
+            restoreBtn.disabled = !isModified;
 
             const copyBtn = document.createElement("button");
             copyBtn.type = "button";
@@ -2287,17 +2371,38 @@ export function renderHtml() {
               render(latestState);
             });
 
+            reportActions.appendChild(restoreBtn);
             reportActions.appendChild(copyBtn);
             reportActions.appendChild(closeBtn);
             reportHeader.appendChild(reportTitle);
             reportHeader.appendChild(reportActions);
 
-            const pre = document.createElement("pre");
-            pre.className = "status-report-pre";
-            pre.textContent = report.plain;
+            const editor = document.createElement("textarea");
+            editor.className = "status-report-editor";
+            editor.value = currentText;
+            const lineCount = Math.max(4, currentText.split("\n").length);
+            editor.rows = lineCount;
+
+            editor.addEventListener("input", () => {
+              if (editor.value === report.plain) {
+                customReportsByDay.delete(dayObj.id);
+                restoreBtn.disabled = true;
+              } else {
+                customReportsByDay.set(dayObj.id, editor.value);
+                restoreBtn.disabled = false;
+              }
+              editor.rows = Math.max(4, editor.value.split("\n").length);
+            });
+
+            restoreBtn.addEventListener("click", () => {
+              customReportsByDay.delete(dayObj.id);
+              editor.value = report.plain;
+              editor.rows = Math.max(4, report.plain.split("\n").length);
+              restoreBtn.disabled = true;
+            });
 
             reportBox.appendChild(reportHeader);
-            reportBox.appendChild(pre);
+            reportBox.appendChild(editor);
             reportFooter.appendChild(reportBox);
           }
 
@@ -2418,9 +2523,12 @@ export function renderHtml() {
       const active = document.activeElement;
       const isEditingNonEmptyInput =
         active &&
-        active.tagName === "INPUT" &&
-        active.type === "text" &&
-        (active.classList.contains("edit-input") || active.value.trim().length > 0);
+        ((active.tagName === "TEXTAREA" &&
+          active.classList.contains("status-report-editor")) ||
+          (active.tagName === "INPUT" &&
+            active.type === "text" &&
+            (active.classList.contains("edit-input") ||
+              active.value.trim().length > 0)));
       if (isEditingNonEmptyInput) return;
 
       const key = (e.key || "").toLowerCase();
