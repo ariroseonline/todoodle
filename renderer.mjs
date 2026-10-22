@@ -64,7 +64,7 @@ function readJsonBody(req) {
     });
 }
 
-function renderHtml() {
+export function renderHtml() {
     return `<!doctype html>
 <html lang="en">
 <head>
@@ -2828,8 +2828,18 @@ export async function ensureServer(instanceId, listId) {
             return;
         }
 
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderHtml());
+        res.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+        });
+        try {
+            const fresh = await import(
+                new URL(`./renderer.mjs?t=${Date.now()}`, import.meta.url).href
+            );
+            res.end(fresh.renderHtml());
+        } catch {
+            res.end(renderHtml());
+        }
     });
 
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
