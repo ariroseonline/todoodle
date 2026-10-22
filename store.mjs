@@ -335,17 +335,30 @@ export async function loadSettings() {
         const dest = parseBackupDestination(parsed?.backupRepo);
         return {
             backupRepo: dest ? dest.display : "",
+            showDayEmojis:
+                typeof parsed?.showDayEmojis === "boolean"
+                    ? parsed.showDayEmojis
+                    : true,
         };
     } catch {
-        return { backupRepo: "" };
+        return { backupRepo: "", showDayEmojis: true };
     }
 }
 
 export async function saveSettings(nextSettings) {
+    const current = await loadSettings();
     await mkdir(artifactsDir, { recursive: true });
-    const dest = parseBackupDestination(nextSettings?.backupRepo);
+    const hasBackupRepo = nextSettings && "backupRepo" in nextSettings;
+    const dest = hasBackupRepo
+        ? parseBackupDestination(nextSettings.backupRepo)
+        : parseBackupDestination(current.backupRepo);
+    const showDayEmojis =
+        nextSettings && typeof nextSettings.showDayEmojis === "boolean"
+            ? nextSettings.showDayEmojis
+            : current.showDayEmojis;
     const payload = {
         backupRepo: dest ? dest.display : "",
+        showDayEmojis,
     };
     await writeFile(getSettingsFilePath(), JSON.stringify(payload, null, 2), "utf8");
     return payload;
@@ -439,6 +452,7 @@ export async function loadList(listId = "default") {
             canUndo: history.undoStack.length > 0,
             canRedo: history.redoStack.length > 0,
             backupRepo: settings.backupRepo || "",
+            showDayEmojis: settings.showDayEmojis !== false,
         };
         if (!Array.isArray(parsed.days) || !parsed.days[0]?.id) {
             await saveList(state, { recordHistory: false });
@@ -454,6 +468,7 @@ export async function loadList(listId = "default") {
             canUndo: history.undoStack.length > 0,
             canRedo: history.redoStack.length > 0,
             backupRepo: settings.backupRepo || "",
+            showDayEmojis: settings.showDayEmojis !== false,
         };
     }
 }
@@ -506,6 +521,7 @@ export async function saveList(state, { recordHistory = true } = {}) {
         canUndo: history.undoStack.length > 0,
         canRedo: history.redoStack.length > 0,
         backupRepo: settings.backupRepo || "",
+        showDayEmojis: settings.showDayEmojis !== false,
     };
 }
 
@@ -647,7 +663,9 @@ export function formatTodoFeedMarkdown(state) {
     const fallbackDayId = days[0]?.id;
 
     for (const day of days) {
-        lines.push(`## ${day.emoji || "✨"} ${day.dateLabel}`);
+        const headingPrefix =
+            state.showDayEmojis === false ? "" : `${day.emoji || "✨"} `;
+        lines.push(`## ${headingPrefix}${day.dateLabel}`);
         lines.push("");
         const dayItems = items.filter((it) => (it.dayId || fallbackDayId) === day.id);
         if (dayItems.length === 0) {

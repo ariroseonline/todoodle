@@ -174,6 +174,27 @@ function renderHtml() {
     .settings-input:focus {
       border-color: var(--color-focus-outline, #0969da);
     }
+    .settings-divider {
+      height: 1px;
+      background: var(--border-color-default, #d0d7de);
+      margin: 10px 0;
+    }
+    .settings-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--text-color-default, #1f2328);
+      cursor: pointer;
+      user-select: none;
+    }
+    .settings-toggle-row input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      cursor: pointer;
+      accent-color: var(--color-focus-outline, #0969da);
+    }
     .history-btn.active {
       border-color: var(--true-color-blue, #0969da);
       color: var(--true-color-blue, #0969da);
@@ -927,7 +948,7 @@ function renderHtml() {
             <path d="m16 16-4-4-4 4"/>
           </svg>
         </button>
-        <button type="button" id="settings-btn" class="history-btn" title="Backup settings" aria-label="Settings">
+        <button type="button" id="settings-btn" class="history-btn" title="Settings" aria-label="Settings">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
             <circle cx="12" cy="12" r="3"/>
@@ -958,6 +979,11 @@ function renderHtml() {
         />
         <button type="submit" class="small-btn primary">Save</button>
       </div>
+      <div class="settings-divider"></div>
+      <label class="settings-toggle-row">
+        <input type="checkbox" id="show-day-emojis-input" checked />
+        <span>Show random emojis on day titles</span>
+      </label>
     </form>
     <div id="feed"></div>
   </div>
@@ -972,6 +998,7 @@ function renderHtml() {
     const settingsBtn = document.getElementById("settings-btn");
     const settingsPanel = document.getElementById("settings-panel");
     const backupRepoInput = document.getElementById("backup-repo-input");
+    const showDayEmojisInput = document.getElementById("show-day-emojis-input");
     const settingsCancelBtn = document.getElementById("settings-cancel-btn");
     const defaultBackupSvg = backupBtn.innerHTML;
     let isBackingUp = false;
@@ -1556,14 +1583,15 @@ function renderHtml() {
         const dayHeaderLabel = document.createElement("span");
         dayHeaderLabel.className = "day-header-label";
 
-        const emojiSpan = document.createElement("span");
-        emojiSpan.className = "day-emoji";
-        emojiSpan.textContent = dayObj.emoji || "✨";
+        if (state.showDayEmojis !== false) {
+          const emojiSpan = document.createElement("span");
+          emojiSpan.className = "day-emoji";
+          emojiSpan.textContent = dayObj.emoji || "✨";
+          dayHeaderLabel.appendChild(emojiSpan);
+        }
 
         const dateSpan = document.createElement("span");
         dateSpan.textContent = dayObj.dateLabel;
-
-        dayHeaderLabel.appendChild(emojiSpan);
         dayHeaderLabel.appendChild(dateSpan);
 
         const lineEl = document.createElement("div");
@@ -2328,8 +2356,17 @@ function renderHtml() {
       topBarRight.classList.toggle("force-visible", opening);
       if (opening) {
         backupRepoInput.value = latestState.backupRepo || "";
+        showDayEmojisInput.checked = latestState.showDayEmojis !== false;
         requestAnimationFrame(() => backupRepoInput.focus());
       }
+    });
+
+    showDayEmojisInput.addEventListener("change", async () => {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ showDayEmojis: showDayEmojisInput.checked }),
+      });
     });
 
     settingsCancelBtn.addEventListener("click", () => {
@@ -2341,13 +2378,14 @@ function renderHtml() {
     settingsPanel.addEventListener("submit", async (e) => {
       e.preventDefault();
       const backupRepo = backupRepoInput.value.trim();
+      const showDayEmojis = showDayEmojisInput.checked;
       settingsPanel.hidden = true;
       settingsBtn.classList.remove("active");
       topBarRight.classList.remove("force-visible");
       await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backupRepo }),
+        body: JSON.stringify({ backupRepo, showDayEmojis }),
       });
     });
 
@@ -2543,7 +2581,7 @@ export async function ensureServer(instanceId, listId) {
 
         if (req.method === "POST" && url.pathname === "/api/settings") {
             const body = await readJsonBody(req);
-            await saveSettings({ backupRepo: body.backupRepo });
+            await saveSettings(body);
             await broadcastListUpdate(currentListId);
             res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ ok: true }));
