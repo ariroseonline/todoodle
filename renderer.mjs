@@ -537,15 +537,12 @@ function renderHtml() {
     @keyframes doodleCheckPop {
       0% {
         transform: scale(0.86) rotate(-4deg);
-        box-shadow: 0 0 0 0 rgba(47, 129, 247, 0);
       }
-      40% {
+      45% {
         transform: scale(1.12) rotate(2deg);
-        box-shadow: 0 0 10px 3px rgba(47, 129, 247, 0.45), 0 0 4px 1px rgba(236, 178, 46, 0.35);
       }
       100% {
         transform: scale(1) rotate(0deg);
-        box-shadow: 0 0 0 0 rgba(47, 129, 247, 0);
       }
     }
     @keyframes doodleCheckDraw {
