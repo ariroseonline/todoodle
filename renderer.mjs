@@ -115,7 +115,8 @@ function renderHtml() {
     }
     .title-scribble {
       margin-top: -1px;
-      width: 100%;
+      margin-left: 2px;
+      width: 82%;
       height: 8px;
       overflow: visible;
       color: var(--true-color-blue, #0969da);
