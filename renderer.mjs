@@ -110,14 +110,9 @@ function renderHtml() {
       font-size: 26px;
       font-weight: 400;
       font-synthesis: none;
+      letter-spacing: -0.04em;
+      font-kerning: normal;
       line-height: 28px;
-      display: inline-flex;
-      align-items: baseline;
-    }
-    .title-char {
-      display: inline-block;
-      transform-origin: center 70%;
-      margin-right: -0.3px;
     }
     .title-scribble {
       margin-top: -31px;
@@ -470,12 +465,14 @@ function renderHtml() {
       color: var(--true-color-blue, #0969da);
     }
     .doodle-checkbox {
+      position: relative;
       width: 18px;
       height: 18px;
       margin: 1px 0 0 0;
       padding: 0;
       background: transparent;
       border: none;
+      border-radius: 5px;
       cursor: pointer;
       flex-shrink: 0;
       display: inline-flex;
@@ -488,28 +485,25 @@ function renderHtml() {
       color: var(--text-color-default, #1f2328);
       transform: scale(1.06) rotate(-2deg);
     }
-    .doodle-checkbox svg {
+    .doodle-checkbox svg.doodle-box-svg {
       width: 18px;
       height: 18px;
       overflow: visible;
     }
     .doodle-box-path {
-      stroke: currentColor;
+      stroke: var(--text-color-muted, #656d76);
       stroke-width: 1.65;
       stroke-linecap: round;
       stroke-linejoin: round;
       fill: transparent;
-      transition: stroke 0.18s ease, fill 0.18s ease;
+      transition: stroke 0.15s ease;
     }
-    .doodle-checkbox.checked {
-      color: var(--true-color-blue, #0969da);
-    }
-    .doodle-checkbox.checked .doodle-box-path {
-      fill: color-mix(in srgb, var(--true-color-blue, #0969da) 10%, transparent);
+    .doodle-checkbox:hover .doodle-box-path {
+      stroke: var(--text-color-default, #1f2328);
     }
     .doodle-check-path {
       stroke: var(--true-color-blue, #0969da);
-      stroke-width: 2.25;
+      stroke-width: 2.3;
       stroke-linecap: round;
       stroke-linejoin: round;
       fill: none;
@@ -520,19 +514,59 @@ function renderHtml() {
       stroke-dashoffset: 0;
     }
     @keyframes doodleCheckPop {
-      0% { transform: scale(0.86) rotate(-4deg); }
-      55% { transform: scale(1.12) rotate(2deg); }
-      100% { transform: scale(1) rotate(0deg); }
+      0% {
+        transform: scale(0.86) rotate(-4deg);
+        box-shadow: 0 0 0 0 rgba(47, 129, 247, 0);
+      }
+      40% {
+        transform: scale(1.12) rotate(2deg);
+        box-shadow: 0 0 10px 3px rgba(47, 129, 247, 0.45), 0 0 4px 1px rgba(236, 178, 46, 0.35);
+      }
+      100% {
+        transform: scale(1) rotate(0deg);
+        box-shadow: 0 0 0 0 rgba(47, 129, 247, 0);
+      }
     }
     @keyframes doodleCheckDraw {
       0% { stroke-dashoffset: 24; }
       100% { stroke-dashoffset: 0; }
     }
     .doodle-checkbox.just-checked {
-      animation: doodleCheckPop 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+      animation: doodleCheckPop 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     }
     .doodle-checkbox.just-checked .doodle-check-path {
-      animation: doodleCheckDraw 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation: doodleCheckDraw 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .star-burst {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: visible;
+    }
+    .star-particle {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 7px;
+      height: 7px;
+      margin-left: -3.5px;
+      margin-top: -3.5px;
+      color: #F4C430;
+      filter: drop-shadow(0 0 2px rgba(244, 196, 48, 0.6));
+      animation: starShoot 0.52s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes starShoot {
+      0% {
+        transform: translate(0, 0) scale(0.3) rotate(0deg);
+        opacity: 1;
+      }
+      60% {
+        opacity: 1;
+      }
+      100% {
+        transform: translate(var(--tx), var(--ty)) scale(1) rotate(var(--rot));
+        opacity: 0;
+      }
     }
     .todo-blocked-emoji {
       width: 16px;
@@ -949,6 +983,7 @@ function renderHtml() {
     let confirmDeleteDayId = null;
     let confirmDeleteItemId = null;
     let justCheckedId = null;
+    let suppressRenderUntil = 0;
     const openReportsByDay = new Set();
     const copiedStateByDay = new Map();
     let latestState = { title: "Todoodle", days: [], items: [], canUndo: false, canRedo: false };
@@ -1175,7 +1210,33 @@ function renderHtml() {
       editInput.addEventListener("blur", () => commit(true));
     }
 
-    function createDoodleCheckbox(item) {
+    function spawnStarBurst(btn) {
+      const burst = document.createElement("span");
+      burst.className = "star-burst";
+      const particles = [
+        { tx: "-14px", ty: "-12px", rot: "-45deg" },
+        { tx: "15px", ty: "-13px", rot: "50deg" },
+        { tx: "18px", ty: "3px", rot: "85deg" },
+        { tx: "-15px", ty: "8px", rot: "-70deg" },
+        { tx: "2px", ty: "-17px", rot: "30deg" },
+      ];
+      for (const p of particles) {
+        const star = document.createElement("span");
+        star.className = "star-particle";
+        star.style.setProperty("--tx", p.tx);
+        star.style.setProperty("--ty", p.ty);
+        star.style.setProperty("--rot", p.rot);
+        star.innerHTML =
+          '<svg viewBox="0 0 16 16" width="7" height="7" fill="currentColor" aria-hidden="true">' +
+          '<path d="M8 0.5 L9.9 5.6 L15.3 6.1 L11.2 9.6 L12.5 14.9 L8 12.1 L3.5 14.9 L4.8 9.6 L0.7 6.1 L6.1 5.6 Z"/>' +
+          "</svg>";
+        burst.appendChild(star);
+      }
+      btn.appendChild(burst);
+      setTimeout(() => burst.remove(), 550);
+    }
+
+    function createDoodleCheckbox(item, li) {
       const isChecked = Boolean(item.completed);
       const btn = document.createElement("button");
       btn.type = "button";
@@ -1187,25 +1248,41 @@ function renderHtml() {
         (isChecked ? " checked" : "") +
         (isChecked && justCheckedId === item.id ? " just-checked" : "");
       btn.innerHTML =
-        '<svg viewBox="0 0 20 20" aria-hidden="true">' +
+        '<svg class="doodle-box-svg" viewBox="0 0 20 20" aria-hidden="true">' +
         '<path class="doodle-box-path" d="M 3.3 4.2 C 7.6 3.4, 13.7 3.6, 16.9 4.1 C 17.5 7.9, 17.2 13.4, 16.6 16.8 C 12.4 17.4, 6.7 17.1, 3.5 16.6 C 2.9 12.9, 3.1 7.5, 3.3 4.2 Z"/>' +
         '<path class="doodle-check-path" d="M 5.4 10.6 C 6.8 12.1, 8.1 13.8, 9.1 14.8 C 11.4 10.9, 14.5 6.4, 18.4 3.1"/>' +
         "</svg>";
       btn.addEventListener("click", async () => {
         const nextCompleted = !item.completed;
         item.completed = nextCompleted;
-        justCheckedId = nextCompleted ? item.id : null;
-        render(latestState);
+        btn.setAttribute("aria-checked", String(nextCompleted));
+        if (li) {
+          li.classList.toggle("completed", nextCompleted);
+        }
+        if (nextCompleted) {
+          item.inProgress = false;
+          item.blocked = false;
+          item.upcoming = false;
+          if (li) {
+            const dot = li.querySelector(".in-progress-dot");
+            if (dot) dot.remove();
+          }
+          btn.classList.remove("just-checked");
+          void btn.offsetWidth;
+          btn.classList.add("checked", "just-checked");
+          spawnStarBurst(btn);
+          suppressRenderUntil = Date.now() + 540;
+          setTimeout(() => {
+            btn.classList.remove("just-checked");
+          }, 520);
+        } else {
+          btn.classList.remove("checked", "just-checked");
+        }
         await fetch("/api/toggle", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id, completed: nextCompleted }),
         });
-        if (justCheckedId === item.id) {
-          setTimeout(() => {
-            if (justCheckedId === item.id) justCheckedId = null;
-          }, 350);
-        }
       });
       return btn;
     }
@@ -1442,37 +1519,10 @@ function renderHtml() {
       window.addEventListener("pointercancel", onPointerUp);
     }
 
-    const CHAR_TRANSFORMS = [
-      "rotate(-5.5deg) translateY(0px)",
-      "rotate(4.5deg) translateY(1px) scale(0.97)",
-      "rotate(-3.5deg) translateY(-1px)",
-      "rotate(6deg) translateY(0.5px) scale(1.03)",
-      "rotate(-5deg) translateY(1.5px) scale(0.95)",
-      "rotate(3.5deg) translateY(-0.5px)",
-      "rotate(-4.5deg) translateY(0px)",
-      "rotate(6.5deg) translateY(1px)",
-    ];
-
-    function renderTitleWordmark(text) {
-      const str = text || "Todoodle";
-      if (titleEl.dataset.renderedText === str) return;
-      titleEl.dataset.renderedText = str;
-      titleEl.setAttribute("aria-label", str);
-      titleEl.innerHTML = "";
-      Array.from(str).forEach((ch, idx) => {
-        const s = document.createElement("span");
-        s.className = "title-char";
-        s.setAttribute("aria-hidden", "true");
-        s.textContent = ch === " " ? "\u00A0" : ch;
-        s.style.transform = CHAR_TRANSFORMS[idx % CHAR_TRANSFORMS.length];
-        titleEl.appendChild(s);
-      });
-    }
-
     function render(state) {
       latestState = state;
       if (editingId) return;
-      renderTitleWordmark(state.title || "Todoodle");
+      titleEl.textContent = state.title || "Todoodle";
       undoBtn.disabled = !state.canUndo;
       redoBtn.disabled = !state.canRedo;
       if (!isBackingUp) {
@@ -1665,7 +1715,7 @@ function renderHtml() {
               });
               leadControl = upcomingLead;
             } else {
-              leadControl = createDoodleCheckbox(item);
+              leadControl = createDoodleCheckbox(item, li);
             }
 
             const mainCol = document.createElement("div");
@@ -2379,8 +2429,6 @@ function renderHtml() {
       } catch {}
     });
 
-    renderTitleWordmark("Todoodle");
-
     fetch("/api/state")
       .then((r) => r.json())
       .then(render);
@@ -2388,7 +2436,18 @@ function renderHtml() {
     const events = new EventSource("/events");
     events.onmessage = (event) => {
       try {
-        render(JSON.parse(event.data));
+        const next = JSON.parse(event.data);
+        latestState = next;
+        if (Date.now() < suppressRenderUntil) {
+          const delay = Math.max(20, suppressRenderUntil - Date.now());
+          setTimeout(() => {
+            if (Date.now() >= suppressRenderUntil) {
+              render(latestState);
+            }
+          }, delay);
+          return;
+        }
+        render(next);
       } catch {}
     };
   </script>
