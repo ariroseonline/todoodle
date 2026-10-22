@@ -1154,7 +1154,7 @@ export function renderHtml() {
 
       function linkifyAndFormatLine(text) {
         let escaped = escapeHtml(text);
-        escaped = escaped.replace(/\*([^*]+)\*/g, "<b>$1</b>");
+        escaped = escaped.replace(/\\*([^*]+)\\*/g, "<b>$1</b>");
         for (const [label, url] of prUrlByLabel.entries()) {
           const escLabel = escapeHtml(label);
           const escUrl = escapeHtml(url);
@@ -1163,7 +1163,7 @@ export function renderHtml() {
         return escaped;
       }
 
-      const lines = String(plainText || "").split("\n");
+      const lines = String(plainText || "").split("\\n");
       const htmlParts = [];
       let inList = false;
 
@@ -1176,7 +1176,7 @@ export function renderHtml() {
           }
           continue;
         }
-        const bulletMatch = line.match(/^(?:•|-|\*)\s+(.+)$/);
+        const bulletMatch = line.match(/^(?:•|-|\\*)\\s+(.+)$/);
         if (bulletMatch) {
           if (!inList) {
             htmlParts.push("<ul>");
@@ -2401,7 +2401,7 @@ export function renderHtml() {
             const editor = document.createElement("textarea");
             editor.className = "status-report-editor";
             editor.value = currentText;
-            const lineCount = Math.max(4, currentText.split("\n").length);
+            const lineCount = Math.max(4, currentText.split("\\n").length);
             editor.rows = lineCount;
 
             editor.addEventListener("input", () => {
@@ -2412,13 +2412,13 @@ export function renderHtml() {
                 customReportsByDay.set(dayObj.id, editor.value);
                 restoreBtn.disabled = false;
               }
-              editor.rows = Math.max(4, editor.value.split("\n").length);
+              editor.rows = Math.max(4, editor.value.split("\\n").length);
             });
 
             restoreBtn.addEventListener("click", () => {
               customReportsByDay.delete(dayObj.id);
               editor.value = report.plain;
-              editor.rows = Math.max(4, report.plain.split("\n").length);
+              editor.rows = Math.max(4, report.plain.split("\\n").length);
               restoreBtn.disabled = true;
             });
 
