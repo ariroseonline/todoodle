@@ -115,10 +115,10 @@ function renderHtml() {
       line-height: 28px;
     }
     .title-scribble {
-      margin-top: -5px;
+      margin-top: -31px;
       margin-left: 2px;
-      width: 245px;
-      height: 18px;
+      width: 270px;
+      height: 40px;
       overflow: visible;
       color: var(--true-color-blue, #0969da);
       pointer-events: none;
@@ -807,8 +807,8 @@ function renderHtml() {
     <div class="top-bar">
       <div class="title-wrap">
         <h1 id="list-title">Todoodle</h1>
-        <svg class="title-scribble" viewBox="0 0 250 18" fill="none" aria-hidden="true">
-          <path d="M 2 14 C 22 10, 42 17, 62 13 C 78 10, 88 15, 96 13 C 112 11, 122 1, 112 1 C 102 1, 104 16, 126 14 C 142 12, 152 0, 141 0 C 130 0, 132 16, 156 14 C 172 12, 182 2, 172 2 C 162 2, 164 16, 186 13 C 202 11, 210 3, 201 3 C 192 3, 195 15, 216 12 C 228 10, 238 6, 246 8" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+        <svg class="title-scribble" viewBox="0 0 280 42" fill="none" aria-hidden="true">
+          <path d="M 2 37 C 24 33, 44 40, 66 35 C 76 33, 82 36, 88 34 C 100 31, 106 21, 98 21 C 91 21, 93 34, 112 29 C 128 25, 138 9, 126 8 C 114 7, 116 28, 144 22 C 166 17, 182 -4, 165 -5 C 148 -6, 150 22, 188 14 C 218 8, 240 -18, 216 -19 C 192 -20, 196 15, 244 4 C 258 1, 268 -6, 276 -11" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
       <div class="top-bar-right">
