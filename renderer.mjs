@@ -109,7 +109,8 @@ function renderHtml() {
       font-family: "Marker Felt", "Chalkboard SE", "Bradley Hand", "Comic Sans MS", cursive;
       font-size: 26px;
       font-weight: 700;
-      letter-spacing: 0.02em;
+      letter-spacing: -0.04em;
+      font-kerning: normal;
       line-height: 28px;
     }
     .title-scribble {
@@ -123,6 +124,13 @@ function renderHtml() {
       display: flex;
       align-items: center;
       gap: 6px;
+      opacity: 0;
+      transition: opacity 0.12s ease;
+    }
+    .top-bar:hover .top-bar-right,
+    .top-bar:focus-within .top-bar-right,
+    .top-bar-right.force-visible {
+      opacity: 1;
     }
     .settings-panel {
       margin-bottom: 18px;
@@ -2053,7 +2061,7 @@ function renderHtml() {
           const reportBtnLabel = document.createElement("span");
           reportBtnLabel.textContent = openReportsByDay.has(dayObj.id)
             ? "Hide Slack status report"
-            : "Create Slack status report";
+            : "Slack status report";
           reportBtn.appendChild(reportBtnLabel);
           reportBtn.addEventListener("click", async () => {
             if (openReportsByDay.has(dayObj.id)) {
