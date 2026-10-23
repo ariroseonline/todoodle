@@ -298,14 +298,13 @@ export function renderHtml() {
       background: color-mix(in srgb, var(--true-color-blue, #0969da) 8%, transparent);
     }
     .day-block {
-      margin-bottom: 32px;
-      padding-bottom: 32px;
-      border-bottom: 2px solid var(--border-color-default, #d0d7de);
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: var(--background-color-muted, color-mix(in srgb, var(--text-color-default, #1f2328) 4%, var(--background-color-default, #ffffff)));
     }
     .day-block:last-child {
       margin-bottom: 0;
-      padding-bottom: 0;
-      border-bottom: none;
     }
     .day-divider {
       display: flex;
