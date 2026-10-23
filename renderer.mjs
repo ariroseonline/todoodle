@@ -298,11 +298,19 @@ export function renderHtml() {
       background: color-mix(in srgb, var(--true-color-blue, #0969da) 8%, transparent);
     }
     .day-block {
-      margin-bottom: 28px;
+      margin-bottom: 32px;
+      padding-bottom: 32px;
+      border-bottom: 2px solid var(--border-color-default, #d0d7de);
+    }
+    .day-block:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
     }
     .day-divider {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
       margin-bottom: 10px;
       min-height: 24px;
@@ -311,7 +319,7 @@ export function renderHtml() {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: var(--font-weight-semibold, 600);
       color: var(--text-color-default, #1f2328);
       white-space: nowrap;
@@ -321,9 +329,7 @@ export function renderHtml() {
       line-height: 1;
     }
     .day-divider-line {
-      flex: 1;
-      height: 1px;
-      background: var(--border-color-default, #d0d7de);
+      display: none;
     }
     .day-actions {
       display: flex;
@@ -404,6 +410,9 @@ export function renderHtml() {
       flex-direction: column;
       padding: 8px 4px;
       border-bottom: 1px solid color-mix(in srgb, var(--border-color-default, #d0d7de) 65%, transparent);
+    }
+    li.todo-item:last-child {
+      border-bottom: none;
     }
     .todo-row {
       display: flex;
