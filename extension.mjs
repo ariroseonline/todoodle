@@ -8,6 +8,7 @@ import {
     undoList,
     redoList,
     normalizeItem,
+    repositionItemInDay,
     resolvePrMetadata,
     refreshDayPrStatuses,
     createDayEntry,
@@ -270,6 +271,11 @@ await joinSession({
                             targetDayId,
                         );
                         state.items.push(item);
+                        repositionItemInDay(
+                            state,
+                            item.id,
+                            item.completed ? "done" : "normal",
+                        );
                         await saveList(state);
                         await broadcastListUpdate(listId);
                         return { item, items: state.items };
@@ -314,7 +320,12 @@ await joinSession({
                                 ? ctx.input.completed
                                 : !item.completed;
                         if (item.completed) {
+                            item.blocked = false;
                             item.inProgress = false;
+                            item.upcoming = false;
+                            repositionItemInDay(state, item.id, "done");
+                        } else {
+                            repositionItemInDay(state, item.id, "normal");
                         }
                         await saveList(state);
                         await broadcastListUpdate(listId);
@@ -355,13 +366,18 @@ await joinSession({
                         if (!item) {
                             throw new CanvasError("item_not_found", "Todo item not found.");
                         }
+                        const wasSpecial = item.completed || item.blocked || item.upcoming;
                         item.inProgress =
                             typeof ctx.input?.inProgress === "boolean"
                                 ? ctx.input.inProgress
                                 : !item.inProgress;
                         if (item.inProgress) {
                             item.completed = false;
+                            item.blocked = false;
                             item.upcoming = false;
+                            if (wasSpecial) {
+                                repositionItemInDay(state, item.id, "normal");
+                            }
                         }
                         await saveList(state);
                         await broadcastListUpdate(listId);
@@ -410,6 +426,9 @@ await joinSession({
                             item.completed = false;
                             item.blocked = false;
                             item.inProgress = false;
+                            repositionItemInDay(state, item.id, "upcoming");
+                        } else {
+                            repositionItemInDay(state, item.id, "normal");
                         }
                         await saveList(state);
                         await broadcastListUpdate(listId);
@@ -458,6 +477,9 @@ await joinSession({
                             item.completed = false;
                             item.inProgress = false;
                             item.upcoming = false;
+                            repositionItemInDay(state, item.id, "blocked");
+                        } else {
+                            repositionItemInDay(state, item.id, "normal");
                         }
                         await saveList(state);
                         await broadcastListUpdate(listId);

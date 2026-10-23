@@ -573,6 +573,79 @@ export function normalizeItem(item, fallbackDayId) {
     };
 }
 
+/**
+ * Reposition an item within its day block according to status transitions:
+ * - "blocked": move to the top of the day's list
+ * - "done": move to the bottom of the day's list, before items marked as upcoming
+ * - "upcoming": move to the very bottom of the day's list
+ * - "normal": move to the bottom of the normal list (after blocked/normal items, before done and upcoming)
+ */
+export function repositionItemInDay(state, itemId, mode) {
+    const items = state.items;
+    if (!Array.isArray(items)) return;
+    const fromIdx = items.findIndex((it) => it.id === itemId);
+    if (fromIdx === -1) return;
+    const [item] = items.splice(fromIdx, 1);
+    const fallbackDayId = state.days?.[0]?.id;
+    const dayId = item.dayId || fallbackDayId;
+
+    const dayIndices = [];
+    for (let i = 0; i < items.length; i++) {
+        if ((items[i].dayId || fallbackDayId) === dayId) {
+            dayIndices.push(i);
+        }
+    }
+
+    if (dayIndices.length === 0) {
+        items.push(item);
+        return;
+    }
+
+    if (mode === "blocked") {
+        items.splice(dayIndices[0], 0, item);
+        return;
+    }
+
+    if (mode === "upcoming") {
+        const lastIdx = dayIndices[dayIndices.length - 1];
+        items.splice(lastIdx + 1, 0, item);
+        return;
+    }
+
+    if (mode === "done") {
+        let lastNonUpcomingIdx = -1;
+        for (const idx of dayIndices) {
+            if (!items[idx].upcoming) {
+                lastNonUpcomingIdx = idx;
+            }
+        }
+        if (lastNonUpcomingIdx !== -1) {
+            items.splice(lastNonUpcomingIdx + 1, 0, item);
+        } else {
+            items.splice(dayIndices[0], 0, item);
+        }
+        return;
+    }
+
+    if (mode === "normal") {
+        let lastActiveIdx = -1;
+        for (const idx of dayIndices) {
+            const it = items[idx];
+            if (!it.completed && !it.upcoming) {
+                lastActiveIdx = idx;
+            }
+        }
+        if (lastActiveIdx !== -1) {
+            items.splice(lastActiveIdx + 1, 0, item);
+        } else {
+            items.splice(dayIndices[0], 0, item);
+        }
+        return;
+    }
+
+    items.push(item);
+}
+
 export function formatSlackStatusReport(dayObj, items) {
     const dayItems = (Array.isArray(items) ? items : []).filter(
         (it) => it.dayId === dayObj.id,

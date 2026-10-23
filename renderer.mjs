@@ -6,6 +6,7 @@ import {
     redoList,
     saveSettings,
     normalizeItem,
+    repositionItemInDay,
     resolvePrMetadata,
     searchAccessiblePrs,
     refreshDayPrStatuses,
@@ -1014,7 +1015,9 @@ export function renderHtml() {
     let confirmDeleteDayId = null;
     let confirmDeleteItemId = null;
     let justCheckedId = null;
+    let lastMovedItemId = null;
     let suppressRenderUntil = 0;
+    let pendingRenderTimer = null;
     const openReportsByDay = new Set();
     const customReportsByDay = new Map();
     const copiedStateByDay = new Map();
@@ -1350,6 +1353,7 @@ export function renderHtml() {
         if (li) {
           li.classList.toggle("completed", nextCompleted);
         }
+        lastMovedItemId = item.id;
         if (nextCompleted) {
           item.inProgress = false;
           item.blocked = false;
@@ -1362,10 +1366,10 @@ export function renderHtml() {
           void btn.offsetWidth;
           btn.classList.add("checked", "just-checked");
           spawnStarBurst(btn);
-          suppressRenderUntil = Date.now() + 540;
+          suppressRenderUntil = Date.now() + 260;
           setTimeout(() => {
             btn.classList.remove("just-checked");
-          }, 520);
+          }, 260);
         } else {
           btn.classList.remove("checked", "just-checked");
         }
@@ -1626,6 +1630,24 @@ export function renderHtml() {
     function render(state) {
       latestState = state;
       if (editingId) return;
+
+      const prevTops = new Map();
+      const prevDayOrders = new Map();
+      if (!document.body.classList.contains("is-dragging")) {
+        for (const block of feedEl.querySelectorAll(".day-block[data-day-id]")) {
+          const dId = block.dataset.dayId;
+          const ids = [];
+          for (const el of block.querySelectorAll("li.todo-item[data-item-id]")) {
+            ids.push(el.dataset.itemId);
+            prevTops.set(el.dataset.itemId, {
+              top: el.getBoundingClientRect().top,
+              dayId: dId,
+            });
+          }
+          prevDayOrders.set(dId, ids.join(","));
+        }
+      }
+
       titleEl.textContent = state.title || "Todoodle";
       undoBtn.disabled = !state.canUndo;
       redoBtn.disabled = !state.canRedo;
@@ -1799,6 +1821,7 @@ export function renderHtml() {
               blockedEmoji.title = "Blocked (click to unblock)";
               blockedEmoji.textContent = "🚫";
               blockedEmoji.addEventListener("click", async () => {
+                lastMovedItemId = item.id;
                 await fetch("/api/blocked", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -1812,6 +1835,7 @@ export function renderHtml() {
               upcomingLead.title = "Upcoming (click to unmark upcoming)";
               upcomingLead.appendChild(createUpcomingIconSvg());
               upcomingLead.addEventListener("click", async () => {
+                lastMovedItemId = item.id;
                 await fetch("/api/upcoming", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -1917,6 +1941,9 @@ export function renderHtml() {
             inProgBtn.setAttribute("aria-label", "Toggle in progress for " + item.text);
             inProgBtn.textContent = "●";
             inProgBtn.addEventListener("click", async () => {
+              if (item.completed || item.blocked || item.upcoming) {
+                lastMovedItemId = item.id;
+              }
               await fetch("/api/in-progress", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1931,6 +1958,7 @@ export function renderHtml() {
             upcomingBtn.setAttribute("aria-label", "Toggle upcoming for " + item.text);
             upcomingBtn.appendChild(createUpcomingIconSvg());
             upcomingBtn.addEventListener("click", async () => {
+              lastMovedItemId = item.id;
               await fetch("/api/upcoming", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1946,6 +1974,7 @@ export function renderHtml() {
             blockedBtn.setAttribute("aria-label", "Toggle blocked for " + item.text);
             blockedBtn.appendChild(createBlockedIconSvg());
             blockedBtn.addEventListener("click", async () => {
+              lastMovedItemId = item.id;
               await fetch("/api/blocked", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -2440,6 +2469,66 @@ export function renderHtml() {
 
         feedEl.appendChild(blockEl);
       }
+
+      if (prevTops.size > 0 && !document.body.classList.contains("is-dragging")) {
+        const movedId = lastMovedItemId;
+        lastMovedItemId = null;
+        const toAnimate = [];
+        for (const block of feedEl.querySelectorAll(".day-block[data-day-id]")) {
+          const dId = block.dataset.dayId;
+          const prevOrder = prevDayOrders.get(dId);
+          if (!prevOrder) continue;
+          const itemEls = Array.from(
+            block.querySelectorAll("li.todo-item[data-item-id]")
+          );
+          const newOrder = itemEls.map((el) => el.dataset.itemId).join(",");
+          if (
+            prevOrder === newOrder ||
+            prevOrder.split(",").length !== itemEls.length
+          ) {
+            continue;
+          }
+          for (const el of itemEls) {
+            const id = el.dataset.itemId;
+            const prev = prevTops.get(id);
+            if (!prev || prev.dayId !== dId) continue;
+            const newTop = el.getBoundingClientRect().top;
+            const deltaY = prev.top - newTop;
+            if (Math.abs(deltaY) > 1) {
+              toAnimate.push({ el, deltaY, isPrimary: id === movedId });
+            }
+          }
+        }
+        if (toAnimate.length > 0) {
+          for (const { el, deltaY, isPrimary } of toAnimate) {
+            el.style.transition = "none";
+            el.style.transform = "translateY(" + deltaY + "px)";
+            if (isPrimary) {
+              el.style.position = "relative";
+              el.style.zIndex = "5";
+              el.style.background =
+                "var(--background-color-muted, color-mix(in srgb, var(--text-color-default, #1f2328) 4%, var(--background-color-default, #ffffff)))";
+              el.style.borderRadius = "6px";
+            }
+          }
+          void feedEl.offsetHeight;
+          for (const { el, isPrimary } of toAnimate) {
+            el.style.transition =
+              "transform 0.36s cubic-bezier(0.22, 1, 0.36, 1)";
+            el.style.transform = "translateY(0)";
+            setTimeout(() => {
+              el.style.transition = "";
+              el.style.transform = "";
+              if (isPrimary) {
+                el.style.position = "";
+                el.style.zIndex = "";
+                el.style.background = "";
+                el.style.borderRadius = "";
+              }
+            }, 380);
+          }
+        }
+      }
     }
 
     async function triggerUndo() {
@@ -2598,7 +2687,16 @@ export function renderHtml() {
         if (Date.now() < suppressRenderUntil) {
           undoBtn.disabled = !next.canUndo;
           redoBtn.disabled = !next.canRedo;
+          if (pendingRenderTimer) clearTimeout(pendingRenderTimer);
+          pendingRenderTimer = setTimeout(() => {
+            pendingRenderTimer = null;
+            render(latestState);
+          }, Math.max(16, suppressRenderUntil - Date.now()));
           return;
+        }
+        if (pendingRenderTimer) {
+          clearTimeout(pendingRenderTimer);
+          pendingRenderTimer = null;
         }
         render(next);
       } catch {}
@@ -2729,17 +2827,21 @@ export async function ensureServer(instanceId, listId) {
                     typeof body.dayId === "string" && state.days.some((d) => d.id === body.dayId)
                         ? body.dayId
                         : state.days[0].id;
-                state.items.push(
-                    normalizeItem(
-                        {
-                            text,
-                            dayId,
-                            completed: Boolean(body.completed),
-                            inProgress: Boolean(body.inProgress),
-                            pr: body.pr,
-                        },
+                const newItem = normalizeItem(
+                    {
+                        text,
                         dayId,
-                    ),
+                        completed: Boolean(body.completed),
+                        inProgress: Boolean(body.inProgress),
+                        pr: body.pr,
+                    },
+                    dayId,
+                );
+                state.items.push(newItem);
+                repositionItemInDay(
+                    state,
+                    newItem.id,
+                    newItem.completed ? "done" : "normal",
                 );
                 await saveList(state);
                 await broadcastListUpdate(currentListId);
@@ -2760,6 +2862,9 @@ export async function ensureServer(instanceId, listId) {
                     item.blocked = false;
                     item.inProgress = false;
                     item.upcoming = false;
+                    repositionItemInDay(state, item.id, "done");
+                } else {
+                    repositionItemInDay(state, item.id, "normal");
                 }
                 await saveList(state);
                 await broadcastListUpdate(currentListId);
@@ -2774,12 +2879,16 @@ export async function ensureServer(instanceId, listId) {
             const state = await loadList(currentListId);
             const item = state.items.find((it) => it.id === body.id);
             if (item) {
+                const wasSpecial = item.completed || item.blocked || item.upcoming;
                 item.inProgress =
                     typeof body.inProgress === "boolean" ? body.inProgress : !item.inProgress;
                 if (item.inProgress) {
                     item.completed = false;
                     item.blocked = false;
                     item.upcoming = false;
+                    if (wasSpecial) {
+                        repositionItemInDay(state, item.id, "normal");
+                    }
                 }
                 await saveList(state);
                 await broadcastListUpdate(currentListId);
@@ -2800,6 +2909,9 @@ export async function ensureServer(instanceId, listId) {
                     item.completed = false;
                     item.inProgress = false;
                     item.upcoming = false;
+                    repositionItemInDay(state, item.id, "blocked");
+                } else {
+                    repositionItemInDay(state, item.id, "normal");
                 }
                 await saveList(state);
                 await broadcastListUpdate(currentListId);
@@ -2820,6 +2932,9 @@ export async function ensureServer(instanceId, listId) {
                     item.completed = false;
                     item.blocked = false;
                     item.inProgress = false;
+                    repositionItemInDay(state, item.id, "upcoming");
+                } else {
+                    repositionItemInDay(state, item.id, "normal");
                 }
                 await saveList(state);
                 await broadcastListUpdate(currentListId);
