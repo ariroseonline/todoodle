@@ -1012,6 +1012,9 @@ export function renderHtml() {
     let prEditingId = null;
     let prSearchQuery = "";
     let cachedPrResults = null;
+    let lastSearchedPrQuery = "";
+    let lastSearchedPrResults = null;
+    let pointerDownInsidePrPicker = false;
     let confirmDeleteDayId = null;
     let confirmDeleteItemId = null;
     let justCheckedId = null;
@@ -1985,13 +1988,16 @@ export function renderHtml() {
             const prBtn = document.createElement("button");
             prBtn.type = "button";
             prBtn.className =
-              "icon-btn" + (itemPrs.length > 0 || prEditingId === item.id ? " active" : "");
+              "icon-btn pr-toggle-btn" +
+              (itemPrs.length > 0 || prEditingId === item.id ? " active" : "");
             prBtn.title = "Attach PR";
             prBtn.setAttribute("aria-label", "Attach PR to " + item.text);
             prBtn.appendChild(createPrIconSvg());
             prBtn.addEventListener("click", () => {
               prEditingId = prEditingId === item.id ? null : item.id;
               prSearchQuery = "";
+              lastSearchedPrQuery = "";
+              lastSearchedPrResults = null;
               render(latestState);
             });
 
@@ -2083,6 +2089,8 @@ export function renderHtml() {
               doneBtn.addEventListener("click", () => {
                 prEditingId = null;
                 prSearchQuery = "";
+                lastSearchedPrQuery = "";
+                lastSearchedPrResults = null;
                 render(latestState);
                 focusDayInput(dayObj.id);
               });
@@ -2229,50 +2237,71 @@ export function renderHtml() {
               }
 
               async function loadPrCandidates(q) {
+                const requestedQuery = (q || "").trim();
                 try {
                   const res = await fetch(
-                    "/api/search-prs?q=" + encodeURIComponent(q || "")
+                    "/api/search-prs?q=" + encodeURIComponent(requestedQuery)
                   );
                   if (!res.ok) return;
                   const data = await res.json();
                   const results = Array.isArray(data.prs) ? data.prs : [];
-                  if (!q) {
+                  if (!requestedQuery) {
                     cachedPrResults = results;
+                  } else {
+                    lastSearchedPrQuery = requestedQuery;
+                    lastSearchedPrResults = results;
+                  }
+                  if (prInput.value.trim() !== requestedQuery) {
+                    return;
                   }
                   currentCandidates = results;
                   activeIdx = 0;
                   renderCandidates(currentCandidates, null);
                 } catch {
-                  renderCandidates(currentCandidates, null);
+                  if (prInput.value.trim() === requestedQuery) {
+                    renderCandidates(currentCandidates, null);
+                  }
                 }
               }
 
               prInput.addEventListener("input", () => {
-                const q = prInput.value.trim();
                 prSearchQuery = prInput.value;
-                if (cachedPrResults && q) {
-                  const lower = q.toLowerCase();
-                  const localFiltered = cachedPrResults.filter(
-                    (c) =>
-                      (c.title && c.title.toLowerCase().includes(lower)) ||
-                      (c.label && c.label.toLowerCase().includes(lower))
-                  );
-                  currentCandidates = localFiltered;
+                const q = prInput.value.trim();
+                if (q) {
+                  if (cachedPrResults) {
+                    const lower = q.toLowerCase();
+                    const localFiltered = cachedPrResults.filter(
+                      (c) =>
+                        (c.title && c.title.toLowerCase().includes(lower)) ||
+                        (c.label && c.label.toLowerCase().includes(lower)) ||
+                        (c.url && c.url.toLowerCase().includes(lower))
+                    );
+                    currentCandidates = localFiltered;
+                  } else {
+                    currentCandidates = [];
+                  }
                   activeIdx = 0;
                   renderCandidates(currentCandidates, "Searching GitHub...");
-                } else if (cachedPrResults && !q) {
+                } else if (cachedPrResults) {
                   currentCandidates = cachedPrResults;
                   activeIdx = 0;
                   renderCandidates(currentCandidates, null);
+                } else {
+                  currentCandidates = [];
+                  activeIdx = 0;
+                  renderCandidates([], "Loading your recent PRs...");
                 }
                 if (searchTimer) clearTimeout(searchTimer);
-                searchTimer = setTimeout(() => loadPrCandidates(q), 220);
+                searchTimer = setTimeout(() => loadPrCandidates(q), 200);
               });
 
               prInput.addEventListener("keydown", async (e) => {
                 if (e.key === "Escape") {
                   e.preventDefault();
                   prEditingId = null;
+                  prSearchQuery = "";
+                  lastSearchedPrQuery = "";
+                  lastSearchedPrResults = null;
                   render(latestState);
                   focusDayInput(dayObj.id);
                 } else if (e.key === "ArrowDown") {
@@ -2297,6 +2326,9 @@ export function renderHtml() {
                     const ref = prInput.value.trim();
                     if (ref) {
                       prInput.value = "";
+                      prSearchQuery = "";
+                      lastSearchedPrQuery = "";
+                      lastSearchedPrResults = null;
                       await fetch("/api/pr", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -2311,21 +2343,36 @@ export function renderHtml() {
                 }
               });
 
-              if (cachedPrResults) {
-                const q = prSearchQuery.trim().toLowerCase();
-                const initialList = q
+              const initialQuery = prSearchQuery.trim();
+              if (
+                initialQuery &&
+                lastSearchedPrQuery === initialQuery &&
+                Array.isArray(lastSearchedPrResults)
+              ) {
+                currentCandidates = lastSearchedPrResults;
+                renderCandidates(currentCandidates, null);
+              } else if (cachedPrResults) {
+                const lower = initialQuery.toLowerCase();
+                const initialList = initialQuery
                   ? cachedPrResults.filter(
                       (c) =>
-                        (c.title && c.title.toLowerCase().includes(q)) ||
-                        (c.label && c.label.toLowerCase().includes(q))
+                        (c.title && c.title.toLowerCase().includes(lower)) ||
+                        (c.label && c.label.toLowerCase().includes(lower)) ||
+                        (c.url && c.url.toLowerCase().includes(lower))
                     )
                   : cachedPrResults;
                 currentCandidates = initialList;
-                renderCandidates(initialList, null);
-                if (!q) loadPrCandidates("");
+                renderCandidates(
+                  initialList,
+                  initialQuery ? "Searching GitHub..." : null
+                );
+                loadPrCandidates(initialQuery);
               } else {
-                renderCandidates([], "Loading your recent PRs...");
-                loadPrCandidates(prSearchQuery.trim());
+                renderCandidates(
+                  [],
+                  initialQuery ? "Searching GitHub..." : "Loading your recent PRs..."
+                );
+                loadPrCandidates(initialQuery);
               }
 
               li.appendChild(prEditor);
@@ -2553,6 +2600,58 @@ export function renderHtml() {
 
     undoBtn.addEventListener("click", triggerUndo);
     redoBtn.addEventListener("click", triggerRedo);
+
+    document.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (!prEditingId) {
+          pointerDownInsidePrPicker = false;
+          return;
+        }
+        const t = e.target;
+        pointerDownInsidePrPicker = Boolean(
+          t &&
+            t.closest &&
+            (t.closest(".pr-editor") || t.closest(".pr-toggle-btn"))
+        );
+      },
+      true
+    );
+
+    document.addEventListener("click", (e) => {
+      if (!prEditingId) return;
+      if (pointerDownInsidePrPicker) {
+        pointerDownInsidePrPicker = false;
+        return;
+      }
+      const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+      const clickedInside = path.some(
+        (el) =>
+          el &&
+          el.classList &&
+          (el.classList.contains("pr-editor") ||
+            el.classList.contains("pr-toggle-btn"))
+      );
+      if (!clickedInside) {
+        const editedItem = (latestState.items || []).find(
+          (it) => it.id === prEditingId
+        );
+        const dayId = editedItem ? editedItem.dayId : null;
+        prEditingId = null;
+        prSearchQuery = "";
+        lastSearchedPrQuery = "";
+        lastSearchedPrResults = null;
+        render(latestState);
+        const t = e.target;
+        if (
+          !t ||
+          !t.closest ||
+          !t.closest("input, textarea, button, a, label, [role='checkbox']")
+        ) {
+          focusDayInput(dayId);
+        }
+      }
+    });
 
     settingsBtn.addEventListener("click", () => {
       const opening = settingsPanel.hidden;
