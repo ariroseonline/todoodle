@@ -1,12 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 
 const execFileAsync = promisify(execFile);
 
+const copilotHome = process.env.COPILOT_HOME || join(homedir(), ".copilot");
 const artifactsDir = join(import.meta.dirname, "artifacts");
 
 const FUN_EMOJIS = [
@@ -560,6 +563,13 @@ export function normalizeItem(item, fallbackDayId) {
     const dayId =
         typeof item.dayId === "string" && item.dayId ? item.dayId : fallbackDayId;
     const prs = normalizePrList(item);
+    const dismissedPrs = Array.isArray(item.dismissedPrs)
+        ? Array.from(
+              new Set(
+                  item.dismissedPrs.filter((s) => typeof s === "string" && s.trim()),
+              ),
+          )
+        : [];
     return {
         id: typeof item.id === "string" && item.id ? item.id : randomUUID(),
         text: String(item.text).trim(),
@@ -570,6 +580,7 @@ export function normalizeItem(item, fallbackDayId) {
         dayId,
         pr: prs[0] || null,
         prs,
+        ...(dismissedPrs.length > 0 ? { dismissedPrs } : {}),
     };
 }
 
@@ -644,6 +655,320 @@ export function repositionItemInDay(state, itemId, mode) {
     }
 
     items.push(item);
+}
+
+const MATCH_STOP_WORDS = new Set([
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "get",
+    "has", "have", "how", "i", "if", "in", "into", "is", "it", "its", "make", "my",
+    "no", "not", "of", "on", "or", "our", "out", "own", "pr", "prs", "so", "some",
+    "such", "that", "the", "their", "then", "there", "these", "they", "this", "to",
+    "up", "use", "very", "was", "we", "what", "when", "where", "which", "who", "will",
+    "with", "work", "working", "would", "you", "your", "add", "added", "fix", "fixed",
+    "ship", "shipped", "update", "updated", "new", "ariroseonline", "github",
+    "noodle", "noodles", "workstream", "workstreams", "v1", "v0", "support",
+    "preparation", "discussed", "discuss", "planned", "final", "more", "team",
+]);
+
+const MATCH_SYNONYMS = {
+    docs: "document",
+    doc: "document",
+    documents: "document",
+    layers: "level",
+    layer: "level",
+    levels: "level",
+    endpoints: "crud",
+    endpoint: "crud",
+};
+
+function stemMatchWord(w) {
+    if (MATCH_SYNONYMS[w]) return MATCH_SYNONYMS[w];
+    if (w.length <= 3) return w;
+    if (w.endsWith("ies") && w.length > 4) return w.slice(0, -3) + "y";
+    if (w.endsWith("ing") && w.length > 5) return w.slice(0, -3);
+    if (w.endsWith("ed") && w.length > 4) return w.slice(0, -2);
+    if (w.endsWith("es") && w.length > 4) return w.slice(0, -2);
+    if (w.endsWith("s") && !w.endsWith("ss") && w.length > 3) return w.slice(0, -1);
+    return MATCH_SYNONYMS[w] || w;
+}
+
+function tokenizeForMatch(text) {
+    if (!text) return [];
+    const expanded = String(text)
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .toLowerCase();
+    const rawTokens = expanded.split(/[^a-z0-9]+/).filter(Boolean);
+    const tokens = [];
+    for (const t of rawTokens) {
+        if (t.length < 2) continue;
+        if (MATCH_STOP_WORDS.has(t)) continue;
+        const stemmed = stemMatchWord(t);
+        if (MATCH_STOP_WORDS.has(stemmed)) continue;
+        tokens.push(stemmed);
+    }
+    return Array.from(new Set(tokens));
+}
+
+function loadSessionPrCandidates() {
+    const dbPath = join(copilotHome, "data.db");
+    let db;
+    try {
+        db = new DatabaseSync(dbPath, { readOnly: true });
+        const rows = db
+            .prepare(`
+            SELECT
+                w.id,
+                w.session_id,
+                w.name,
+                w.branch,
+                w.created_at,
+                w.updated_at,
+                COALESCE(wrc.repo_full_name, w.created_pr_repo_full_name, w.source_pr_repo_full_name) AS repo_full_name,
+                COALESCE(wrc.created_pr_number, w.created_pr_number) AS created_pr_number,
+                COALESCE(wrc.created_pr_state, w.created_pr_state) AS created_pr_state,
+                COALESCE(wrc.created_pr_html_url, w.created_pr_html_url) AS created_pr_html_url,
+                COALESCE(wrc.source_pr_number, w.source_pr_number) AS source_pr_number,
+                COALESCE(wrc.source_pr_title, w.source_pr_title) AS source_pr_title,
+                COALESCE(wrc.source_pr_state, w.source_pr_state) AS source_pr_state,
+                COALESCE(wrc.source_pr_html_url, w.source_pr_html_url) AS source_pr_html_url
+            FROM workspaces w
+            LEFT JOIN workspace_repo_contexts wrc ON wrc.workspace_id = w.id
+            WHERE COALESCE(wrc.created_pr_number, w.created_pr_number, wrc.source_pr_number, w.source_pr_number) IS NOT NULL
+            ORDER BY w.updated_at DESC
+            LIMIT 100
+        `)
+            .all();
+
+        const prTitleByLabel = new Map();
+        if (Array.isArray(cachedMyPrs)) {
+            for (const p of cachedMyPrs) {
+                if (p.label && p.title) prTitleByLabel.set(p.label, p.title);
+            }
+        }
+
+        const docFreq = new Map();
+        const entries = [];
+
+        for (const r of rows) {
+            const repo = r.repo_full_name ? String(r.repo_full_name).trim() : "";
+            const num = r.created_pr_number || r.source_pr_number;
+            if (!repo || !num) continue;
+
+            const isCreated = Boolean(r.created_pr_number);
+            const rawState = String(
+                (isCreated ? r.created_pr_state : r.source_pr_state) || "open",
+            ).toLowerCase();
+            if (rawState === "closed") continue;
+
+            const label = `${repo}#${num}`;
+            const url =
+                (isCreated ? r.created_pr_html_url : r.source_pr_html_url) ||
+                `https://github.com/${repo}/pull/${num}`;
+            const isDraft = rawState === "draft";
+
+            let planHeading = "";
+            if (r.session_id) {
+                try {
+                    const planPath = join(
+                        copilotHome,
+                        "session-state",
+                        String(r.session_id),
+                        "plan.md",
+                    );
+                    const planRaw = readFileSync(planPath, "utf8").slice(0, 300);
+                    const firstLine = planRaw.split("\n")[0] || "";
+                    planHeading = firstLine.replace(/^#+\s*/, "");
+                } catch {}
+            }
+
+            const repoHint = repo.endsWith("/github-ui") ? "ui" : "";
+            const prTitle = prTitleByLabel.get(label) || r.source_pr_title || "";
+            const nameTokens = new Set(
+                tokenizeForMatch(`${r.name || ""} ${prTitle} ${repoHint}`),
+            );
+            const branchTokens = new Set(
+                tokenizeForMatch(`${r.branch || ""} ${planHeading}`),
+            );
+            const allTokens = new Set([...nameTokens, ...branchTokens]);
+            if (allTokens.size === 0) continue;
+
+            for (const t of allTokens) {
+                docFreq.set(t, (docFreq.get(t) || 0) + 1);
+            }
+
+            entries.push({
+                raw: r,
+                pr: { url, label, isDraft },
+                prKey: label,
+                num: Number(num),
+                nameTokens,
+                branchTokens,
+                allTokens,
+                updatedMs: new Date(r.updated_at || r.created_at || Date.now()).getTime(),
+            });
+        }
+
+        return { entries, docFreq };
+    } catch {
+        return { entries: [], docFreq: new Map() };
+    } finally {
+        try {
+            if (db) db.close();
+        } catch {}
+    }
+}
+
+export async function autoMatchSessionPrs(
+    state,
+    { targetItemId = null, recordHistory = false } = {},
+) {
+    if (!state || !Array.isArray(state.items) || state.items.length === 0) {
+        return false;
+    }
+    const { entries, docFreq } = loadSessionPrCandidates();
+    if (entries.length === 0) return false;
+
+    const fallbackDayId = state.days?.[0]?.id;
+    const dayById = new Map((state.days || []).map((d) => [d.id, d]));
+
+    // Candidates for auto-matching: either a specific targetItemId (just added/edited)
+    // or all items in the active/latest day block that have no PR attached yet
+    const candidateItems = state.items.filter((it) => {
+        if (it.upcoming) return false;
+        const prs = Array.isArray(it.prs) && it.prs.length ? it.prs : it.pr ? [it.pr] : [];
+        if (prs.length > 0) return false;
+        if (targetItemId) return it.id === targetItemId;
+        return (it.dayId || fallbackDayId) === fallbackDayId;
+    });
+
+    if (candidateItems.length === 0) return false;
+
+    function tokenIdf(t) {
+        const df = docFreq.get(t) || 1;
+        return 1 + Math.log((entries.length + 1) / (df + 1)) * 0.45;
+    }
+
+    // Track PRs already attached to items in the same day block so we prefer unclaimed PRs
+    const claimedPrsByDay = new Map();
+    for (const it of state.items) {
+        const dId = it.dayId || fallbackDayId;
+        const prs = Array.isArray(it.prs) && it.prs.length ? it.prs : it.pr ? [it.pr] : [];
+        if (!prs.length) continue;
+        if (!claimedPrsByDay.has(dId)) claimedPrsByDay.set(dId, new Set());
+        const set = claimedPrsByDay.get(dId);
+        for (const p of prs) {
+            if (p.label) set.add(p.label);
+            if (p.url) set.add(p.url);
+        }
+    }
+
+    const pairs = [];
+    for (const item of candidateItems) {
+        const dId = item.dayId || fallbackDayId;
+        const dayObj = dayById.get(dId);
+        const dayMs = dayObj?.createdAt
+            ? new Date(dayObj.createdAt).getTime()
+            : Date.now();
+        const dismissed = new Set(item.dismissedPrs || []);
+        const todoTokens = tokenizeForMatch(item.text);
+
+        for (const entry of entries) {
+            if (
+                dismissed.has(entry.pr.label) ||
+                (entry.pr.url && dismissed.has(entry.pr.url))
+            ) {
+                continue;
+            }
+
+            // Explicit #123 or /pull/123 reference in todo text
+            if (
+                item.text.includes(`#${entry.num}`) ||
+                item.text.includes(`/pull/${entry.num}`)
+            ) {
+                pairs.push({ item, entry, score: 100, explicit: true });
+                continue;
+            }
+
+            const diffHours = Math.abs(entry.updatedMs - dayMs) / (1000 * 3600);
+            if (diffHours > 96) continue;
+
+            if (todoTokens.length === 0) continue;
+
+            let matchedWeight = 0;
+            let totalTodoWeight = 0;
+            let matchedCount = 0;
+            let maxMatchedIdf = 0;
+
+            for (const t of todoTokens) {
+                const idf = tokenIdf(t);
+                totalTodoWeight += idf;
+                if (entry.nameTokens.has(t)) {
+                    matchedWeight += idf * 1.2;
+                    matchedCount++;
+                    if (idf > maxMatchedIdf) maxMatchedIdf = idf;
+                } else if (entry.branchTokens.has(t)) {
+                    matchedWeight += idf * 1.05;
+                    matchedCount++;
+                    if (idf > maxMatchedIdf) maxMatchedIdf = idf;
+                }
+            }
+
+            if (matchedCount === 0) continue;
+            const isRareSingleMatch =
+                matchedCount === 1 && maxMatchedIdf >= 2.0 && entry.allTokens.size <= 8;
+            const isShortTodoSingleMatch =
+                matchedCount === 1 &&
+                todoTokens.length <= 2 &&
+                entry.nameTokens.size <= 3;
+            if (matchedCount < 2 && !isRareSingleMatch && !isShortTodoSingleMatch) {
+                continue;
+            }
+
+            const coverageTodo = matchedWeight / Math.max(1, totalTodoWeight);
+            const coverageSession =
+                matchedCount /
+                Math.max(1, entry.nameTokens.size || entry.branchTokens.size);
+            let score =
+                coverageTodo * 0.65 + coverageSession * 0.35 + matchedCount * 0.12;
+
+            const alreadyClaimedInDay =
+                claimedPrsByDay.get(dId)?.has(entry.pr.label) ||
+                (entry.pr.url && claimedPrsByDay.get(dId)?.has(entry.pr.url));
+            if (alreadyClaimedInDay) {
+                score -= 0.35;
+            }
+
+            if (score >= 0.58) {
+                pairs.push({ item, entry, score, explicit: false });
+            }
+        }
+    }
+
+    if (pairs.length === 0) return false;
+
+    pairs.sort((a, b) => b.score - a.score);
+    const assignedTodos = new Set();
+    let changed = false;
+
+    for (const p of pairs) {
+        if (assignedTodos.has(p.item.id)) continue;
+        const dId = p.item.dayId || fallbackDayId;
+        if (!p.explicit && claimedPrsByDay.get(dId)?.has(p.entry.pr.label)) {
+            continue;
+        }
+        assignedTodos.add(p.item.id);
+        if (!claimedPrsByDay.has(dId)) claimedPrsByDay.set(dId, new Set());
+        claimedPrsByDay.get(dId).add(p.entry.pr.label);
+        if (p.entry.pr.url) claimedPrsByDay.get(dId).add(p.entry.pr.url);
+
+        p.item.prs = [p.entry.pr];
+        p.item.pr = p.entry.pr;
+        changed = true;
+    }
+
+    if (changed) {
+        await saveList(state, { recordHistory });
+    }
+    return changed;
 }
 
 export function formatSlackStatusReport(dayObj, items) {

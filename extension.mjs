@@ -9,6 +9,7 @@ import {
     redoList,
     normalizeItem,
     repositionItemInDay,
+    autoMatchSessionPrs,
     resolvePrMetadata,
     refreshDayPrStatuses,
     createDayEntry,
@@ -276,6 +277,10 @@ await joinSession({
                             item.id,
                             item.completed ? "done" : "normal",
                         );
+                        await autoMatchSessionPrs(state, {
+                            targetItemId: item.id,
+                            recordHistory: false,
+                        });
                         await saveList(state);
                         await broadcastListUpdate(listId);
                         return { item, items: state.items };
@@ -653,6 +658,10 @@ await joinSession({
                         }
                         if (typeof ctx.input?.text === "string" && ctx.input.text.trim()) {
                             item.text = ctx.input.text.trim();
+                            await autoMatchSessionPrs(state, {
+                                targetItemId: item.id,
+                                recordHistory: false,
+                            });
                         }
                         if (typeof ctx.input?.dayId === "string") {
                             item.dayId = ctx.input.dayId;

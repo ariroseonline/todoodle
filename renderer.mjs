@@ -7,6 +7,8 @@ import {
     saveSettings,
     normalizeItem,
     repositionItemInDay,
+    autoMatchSessionPrs,
+    extractRepoAndPrNumber,
     resolvePrMetadata,
     searchAccessiblePrs,
     refreshDayPrStatuses,
@@ -847,6 +849,14 @@ export function renderHtml() {
       font-size: 12px;
       color: var(--text-color-muted, #656d76);
     }
+    .pr-picker-error {
+      padding: 7px 10px;
+      font-size: 12px;
+      line-height: 16px;
+      color: var(--true-color-red, #cf222e);
+      background: color-mix(in srgb, var(--true-color-red, #cf222e) 8%, var(--background-color-default, #ffffff));
+      border-bottom: 1px solid color-mix(in srgb, var(--true-color-red, #cf222e) 25%, var(--border-color-default, #d0d7de));
+    }
     .small-btn {
       padding: 4px 9px;
       border-radius: 5px;
@@ -1011,6 +1021,7 @@ export function renderHtml() {
     let editingId = null;
     let prEditingId = null;
     let prSearchQuery = "";
+    let prPickerError = null;
     let cachedPrResults = null;
     let lastSearchedPrQuery = "";
     let lastSearchedPrResults = null;
@@ -1996,6 +2007,7 @@ export function renderHtml() {
             prBtn.addEventListener("click", () => {
               prEditingId = prEditingId === item.id ? null : item.id;
               prSearchQuery = "";
+              prPickerError = null;
               lastSearchedPrQuery = "";
               lastSearchedPrResults = null;
               render(latestState);
@@ -2068,7 +2080,7 @@ export function renderHtml() {
             rowEl.appendChild(actions);
             li.appendChild(rowEl);
 
-            // Searchable PR Picker popover (supports attaching multiple PRs)
+            // Searchable PR Picker popover (optimistically closes on selection)
             if (prEditingId === item.id) {
               const prEditor = document.createElement("div");
               prEditor.className = "pr-editor";
@@ -2082,22 +2094,15 @@ export function renderHtml() {
               prInput.placeholder = "Search your PRs or paste URL / owner/repo#123...";
               prInput.value = prSearchQuery;
 
-              const doneBtn = document.createElement("button");
-              doneBtn.type = "button";
-              doneBtn.className = "small-btn";
-              doneBtn.textContent = "Done";
-              doneBtn.addEventListener("click", () => {
-                prEditingId = null;
-                prSearchQuery = "";
-                lastSearchedPrQuery = "";
-                lastSearchedPrResults = null;
-                render(latestState);
-                focusDayInput(dayObj.id);
-              });
-
               headerEl.appendChild(prInput);
-              headerEl.appendChild(doneBtn);
               prEditor.appendChild(headerEl);
+
+              if (prPickerError) {
+                const errBanner = document.createElement("div");
+                errBanner.className = "pr-picker-error";
+                errBanner.textContent = prPickerError;
+                prEditor.appendChild(errBanner);
+              }
 
               const resultsList = document.createElement("ul");
               resultsList.className = "pr-picker-list";
@@ -2121,22 +2126,17 @@ export function renderHtml() {
               }
 
               async function toggleCandidate(cand) {
+                const targetItem =
+                  (latestState.items || []).find((it) => it.id === item.id) || item;
+                const prevPrs = getItemPrs(targetItem).map((p) => ({ ...p }));
                 const attached = isPrAttached(cand);
-                if (attached) {
-                  await fetch("/api/pr", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
+                const prPayload = attached
+                  ? {
                       id: item.id,
                       action: "remove",
                       prKey: cand.url || cand.label,
-                    }),
-                  });
-                } else {
-                  await fetch("/api/pr", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
+                    }
+                  : {
                       id: item.id,
                       action: "add",
                       pr: {
@@ -2144,8 +2144,108 @@ export function renderHtml() {
                         label: cand.label,
                         isDraft: Boolean(cand.isDraft),
                       },
+                    };
+
+                // Optimistically update item PRs and close the PR picker immediately
+                if (attached) {
+                  const nextPrs = prevPrs.filter(
+                    (p) =>
+                      (p.url || p.label) !== (cand.url || cand.label) &&
+                      p.label !== cand.label
+                  );
+                  targetItem.prs = nextPrs;
+                  targetItem.pr = nextPrs[0] || null;
+                } else {
+                  const addedPr = {
+                    url: cand.url || "",
+                    label: cand.label || cand.url || "",
+                    isDraft: Boolean(cand.isDraft),
+                  };
+                  const nextPrs = [...prevPrs, addedPr];
+                  targetItem.prs = nextPrs;
+                  targetItem.pr = nextPrs[0] || null;
+                }
+
+                prEditingId = null;
+                prSearchQuery = "";
+                prPickerError = null;
+                lastSearchedPrQuery = "";
+                lastSearchedPrResults = null;
+                render(latestState);
+                focusDayInput(dayObj.id);
+
+                try {
+                  const res = await fetch("/api/pr", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(prPayload),
+                  });
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok || data.ok === false) {
+                    throw new Error(
+                      (data && data.error) || "Failed to attach PR. Please try again."
+                    );
+                  }
+                } catch (err) {
+                  targetItem.prs = prevPrs;
+                  targetItem.pr = prevPrs[0] || null;
+                  prEditingId = item.id;
+                  prPickerError =
+                    err && err.message
+                      ? err.message
+                      : "Failed to attach PR. Please try again.";
+                  render(latestState);
+                }
+              }
+
+              async function submitRawPrRef(ref) {
+                const targetItem =
+                  (latestState.items || []).find((it) => it.id === item.id) || item;
+                const prevPrs = getItemPrs(targetItem).map((p) => ({ ...p }));
+                const optimisticPr = {
+                  url: /^https?:\\/\\//i.test(ref) ? ref : "",
+                  label: ref,
+                  isDraft: false,
+                };
+                const nextPrs = [...prevPrs, optimisticPr];
+                targetItem.prs = nextPrs;
+                targetItem.pr = nextPrs[0] || null;
+
+                prEditingId = null;
+                prSearchQuery = "";
+                prPickerError = null;
+                lastSearchedPrQuery = "";
+                lastSearchedPrResults = null;
+                render(latestState);
+                focusDayInput(dayObj.id);
+
+                try {
+                  const res = await fetch("/api/pr", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      id: item.id,
+                      action: "add",
+                      pr: { ref },
                     }),
                   });
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok || data.ok === false) {
+                    throw new Error(
+                      (data && data.error) ||
+                        "Could not attach PR. Paste a valid PR URL or owner/repo#number."
+                    );
+                  }
+                } catch (err) {
+                  targetItem.prs = prevPrs;
+                  targetItem.pr = prevPrs[0] || null;
+                  prEditingId = item.id;
+                  prSearchQuery = ref;
+                  prPickerError =
+                    err && err.message
+                      ? err.message
+                      : "Could not attach PR. Paste a valid PR URL or owner/repo#number.";
+                  render(latestState);
                 }
               }
 
@@ -2266,6 +2366,11 @@ export function renderHtml() {
 
               prInput.addEventListener("input", () => {
                 prSearchQuery = prInput.value;
+                if (prPickerError) {
+                  prPickerError = null;
+                  const existingBanner = prEditor.querySelector(".pr-picker-error");
+                  if (existingBanner) existingBanner.remove();
+                }
                 const q = prInput.value.trim();
                 if (q) {
                   if (cachedPrResults) {
@@ -2300,6 +2405,7 @@ export function renderHtml() {
                   e.preventDefault();
                   prEditingId = null;
                   prSearchQuery = "";
+                  prPickerError = null;
                   lastSearchedPrQuery = "";
                   lastSearchedPrResults = null;
                   render(latestState);
@@ -2325,19 +2431,7 @@ export function renderHtml() {
                   } else {
                     const ref = prInput.value.trim();
                     if (ref) {
-                      prInput.value = "";
-                      prSearchQuery = "";
-                      lastSearchedPrQuery = "";
-                      lastSearchedPrResults = null;
-                      await fetch("/api/pr", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          id: item.id,
-                          action: "add",
-                          pr: { ref },
-                        }),
-                      });
+                      await submitRawPrRef(ref);
                     }
                   }
                 }
@@ -2639,6 +2733,7 @@ export function renderHtml() {
         const dayId = editedItem ? editedItem.dayId : null;
         prEditingId = null;
         prSearchQuery = "";
+        prPickerError = null;
         lastSearchedPrQuery = "";
         lastSearchedPrResults = null;
         render(latestState);
@@ -2824,14 +2919,22 @@ export async function ensureServer(instanceId, listId) {
                 Connection: "keep-alive",
             });
             clients.add(res);
-            const state = await loadList(currentListId);
+            let state = await loadList(currentListId);
+            const matched = await autoMatchSessionPrs(state);
+            if (matched) {
+                state = await loadList(currentListId);
+            }
             res.write(`data: ${JSON.stringify(state)}\n\n`);
             req.on("close", () => clients.delete(res));
             return;
         }
 
         if (req.method === "GET" && url.pathname === "/api/state") {
-            const state = await loadList(currentListId);
+            let state = await loadList(currentListId);
+            const matched = await autoMatchSessionPrs(state);
+            if (matched) {
+                state = await loadList(currentListId);
+            }
             res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
             res.end(JSON.stringify(state));
             return;
@@ -2942,6 +3045,10 @@ export async function ensureServer(instanceId, listId) {
                     newItem.id,
                     newItem.completed ? "done" : "normal",
                 );
+                await autoMatchSessionPrs(state, {
+                    targetItemId: newItem.id,
+                    recordHistory: false,
+                });
                 await saveList(state);
                 await broadcastListUpdate(currentListId);
             }
@@ -3079,48 +3186,90 @@ export async function ensureServer(instanceId, listId) {
             const body = await readJsonBody(req);
             const state = await loadList(currentListId);
             const item = state.items.find((it) => it.id === body.id);
-            if (item) {
-                const existing = Array.isArray(item.prs)
-                    ? [...item.prs]
-                    : item.pr
-                      ? [item.pr]
-                      : [];
-                if (body.action === "remove" && body.prKey) {
-                    const nextPrs = existing.filter(
-                        (p) => (p.url || p.label) !== body.prKey && p.label !== body.prKey,
-                    );
-                    item.prs = nextPrs;
-                    item.pr = nextPrs[0] || null;
-                } else if (!body.pr) {
-                    item.prs = [];
-                    item.pr = null;
-                } else {
-                    const rawRefs =
-                        typeof body.pr.ref === "string"
-                            ? body.pr.ref
-                                  .split(/[\s,]+/)
-                                  .map((s) => s.trim())
-                                  .filter(Boolean)
-                            : [body.pr];
-                    const resolvedList = await Promise.all(
-                        rawRefs.map((r) => resolvePrMetadata(r)),
-                    );
-                    const merged = body.action === "replace" ? [] : existing;
-                    const seen = new Set(merged.map((p) => p.url || p.label));
-                    for (const p of resolvedList) {
-                        if (!p) continue;
-                        const key = p.url || p.label;
-                        if (!seen.has(key)) {
-                            seen.add(key);
-                            merged.push(p);
-                        }
-                    }
-                    item.prs = merged;
-                    item.pr = merged[0] || null;
-                }
-                await saveList(state);
-                await broadcastListUpdate(currentListId);
+            if (!item) {
+                res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+                res.end(JSON.stringify({ ok: false, error: "Todo item not found." }));
+                return;
             }
+            const existing = Array.isArray(item.prs)
+                ? [...item.prs]
+                : item.pr
+                  ? [item.pr]
+                  : [];
+            const dismissed = new Set(
+                Array.isArray(item.dismissedPrs) ? item.dismissedPrs : [],
+            );
+            if (body.action === "remove" && body.prKey) {
+                for (const p of existing) {
+                    if ((p.url || p.label) === body.prKey || p.label === body.prKey) {
+                        if (p.label) dismissed.add(p.label);
+                        if (p.url) dismissed.add(p.url);
+                    }
+                }
+                dismissed.add(String(body.prKey));
+                const nextPrs = existing.filter(
+                    (p) => (p.url || p.label) !== body.prKey && p.label !== body.prKey,
+                );
+                item.prs = nextPrs;
+                item.pr = nextPrs[0] || null;
+                item.dismissedPrs = Array.from(dismissed);
+            } else if (!body.pr) {
+                for (const p of existing) {
+                    if (p.label) dismissed.add(p.label);
+                    if (p.url) dismissed.add(p.url);
+                }
+                item.prs = [];
+                item.pr = null;
+                item.dismissedPrs = Array.from(dismissed);
+            } else {
+                const rawRefs =
+                    typeof body.pr.ref === "string"
+                        ? body.pr.ref
+                              .split(/[\s,]+/)
+                              .map((s) => s.trim())
+                              .filter(Boolean)
+                        : [body.pr];
+                const resolvedList = (
+                    await Promise.all(rawRefs.map((r) => resolvePrMetadata(r)))
+                ).filter(Boolean);
+
+                // Validate that raw refs resolved to a recognizable PR URL or #number
+                const validResolved = resolvedList.filter(
+                    (p) =>
+                        Boolean(extractRepoAndPrNumber(p)) ||
+                        /^https?:\/\//i.test(p.url || "") ||
+                        /^#?\d+$/.test(p.label || ""),
+                );
+                if (validResolved.length === 0) {
+                    res.writeHead(400, {
+                        "Content-Type": "application/json; charset=utf-8",
+                    });
+                    res.end(
+                        JSON.stringify({
+                            ok: false,
+                            error: "Could not resolve PR. Paste a valid PR URL or owner/repo#number.",
+                        }),
+                    );
+                    return;
+                }
+
+                const merged = body.action === "replace" ? [] : existing;
+                const seen = new Set(merged.map((p) => p.url || p.label));
+                for (const p of validResolved) {
+                    const key = p.url || p.label;
+                    if (p.label) dismissed.delete(p.label);
+                    if (p.url) dismissed.delete(p.url);
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        merged.push(p);
+                    }
+                }
+                item.prs = merged;
+                item.pr = merged[0] || null;
+                item.dismissedPrs = Array.from(dismissed);
+            }
+            await saveList(state);
+            await broadcastListUpdate(currentListId);
             res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ ok: true }));
             return;
@@ -3134,6 +3283,10 @@ export async function ensureServer(instanceId, listId) {
                 const item = state.items.find((it) => it.id === body.id);
                 if (item) {
                     item.text = text;
+                    await autoMatchSessionPrs(state, {
+                        targetItemId: item.id,
+                        recordHistory: false,
+                    });
                     await saveList(state);
                     await broadcastListUpdate(currentListId);
                 }
@@ -3168,8 +3321,9 @@ export async function ensureServer(instanceId, listId) {
             const dayObj =
                 (dayId && state.days.find((d) => d.id === dayId)) || state.days[0];
             if (dayObj) {
+                const matched = await autoMatchSessionPrs(state);
                 const changed = await refreshDayPrStatuses(state, dayObj.id);
-                if (changed) {
+                if (matched || changed) {
                     await broadcastListUpdate(currentListId);
                 }
             }
@@ -3197,11 +3351,28 @@ export async function ensureServer(instanceId, listId) {
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : 0;
 
+    // Background poll every 30s while canvas is open to auto-attach PRs from matching sessions
+    const autoMatchTimer = setInterval(async () => {
+        if (clients.size === 0) return;
+        try {
+            const currentListId = getListIdForInstance(instanceId);
+            const state = await loadList(currentListId);
+            const changed = await autoMatchSessionPrs(state);
+            if (changed) {
+                await broadcastListUpdate(currentListId);
+            }
+        } catch {}
+    }, 30_000);
+    if (typeof autoMatchTimer.unref === "function") {
+        autoMatchTimer.unref();
+    }
+
     entry = {
         server,
         url: `http://127.0.0.1:${port}/`,
         listId: resolvedListId,
         clients,
+        autoMatchTimer,
     };
     servers.set(instanceId, entry);
     return entry;
@@ -3212,6 +3383,9 @@ export async function closeServer(instanceId) {
     const entry = servers.get(instanceId);
     if (entry) {
         servers.delete(instanceId);
+        if (entry.autoMatchTimer) {
+            clearInterval(entry.autoMatchTimer);
+        }
         for (const client of entry.clients) {
             client.end();
         }
