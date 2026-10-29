@@ -3213,6 +3213,7 @@ export async function ensureServer(instanceId, listId) {
                 item.prs = nextPrs;
                 item.pr = nextPrs[0] || null;
                 item.dismissedPrs = Array.from(dismissed);
+                item.autoPrDisabled = true;
             } else if (!body.pr) {
                 for (const p of existing) {
                     if (p.label) dismissed.add(p.label);
@@ -3221,6 +3222,7 @@ export async function ensureServer(instanceId, listId) {
                 item.prs = [];
                 item.pr = null;
                 item.dismissedPrs = Array.from(dismissed);
+                item.autoPrDisabled = true;
             } else {
                 const rawRefs =
                     typeof body.pr.ref === "string"

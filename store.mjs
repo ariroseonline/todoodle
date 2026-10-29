@@ -570,6 +570,7 @@ export function normalizeItem(item, fallbackDayId) {
               ),
           )
         : [];
+    const autoPrDisabled = Boolean(item.autoPrDisabled) || dismissedPrs.length > 0;
     return {
         id: typeof item.id === "string" && item.id ? item.id : randomUUID(),
         text: String(item.text).trim(),
@@ -581,6 +582,7 @@ export function normalizeItem(item, fallbackDayId) {
         pr: prs[0] || null,
         prs,
         ...(dismissedPrs.length > 0 ? { dismissedPrs } : {}),
+        ...(autoPrDisabled ? { autoPrDisabled: true } : {}),
     };
 }
 
@@ -664,9 +666,12 @@ const MATCH_STOP_WORDS = new Set([
     "such", "that", "the", "their", "then", "there", "these", "they", "this", "to",
     "up", "use", "very", "was", "we", "what", "when", "where", "which", "who", "will",
     "with", "work", "working", "would", "you", "your", "add", "added", "fix", "fixed",
-    "ship", "shipped", "update", "updated", "new", "ariroseonline", "github",
+    "ship", "shipped", "ships", "update", "updated", "new", "ariroseonline", "github",
     "noodle", "noodles", "workstream", "workstreams", "v1", "v0", "support",
     "preparation", "discussed", "discuss", "planned", "final", "more", "team",
+    "ui", "after", "before", "first", "now", "right", "since", "yet", "follow",
+    "followup", "followups", "monday", "tuesday", "wednesday", "thursday", "friday",
+    "enable", "enablement", "allow", "reconcile", "merge", "deploy",
 ]);
 
 const MATCH_SYNONYMS = {
@@ -691,9 +696,25 @@ function stemMatchWord(w) {
     return MATCH_SYNONYMS[w] || w;
 }
 
+function stripUrlsForMatch(text) {
+    return String(text || "").replace(/https?:\/\/\S+/gi, " ");
+}
+
+function extractPossessiveTokens(text) {
+    const cleaned = stripUrlsForMatch(text).toLowerCase();
+    const matches = cleaned.matchAll(/\b([a-z]{3,})['’]s\b/g);
+    const out = [];
+    for (const m of matches) {
+        const w = stemMatchWord(m[1]);
+        if (!MATCH_STOP_WORDS.has(w)) out.push(w);
+    }
+    return out;
+}
+
 function tokenizeForMatch(text) {
     if (!text) return [];
-    const expanded = String(text)
+    const cleaned = stripUrlsForMatch(text);
+    const expanded = cleaned
         .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
         .toLowerCase();
     const rawTokens = expanded.split(/[^a-z0-9]+/).filter(Boolean);
@@ -780,10 +801,9 @@ function loadSessionPrCandidates() {
                 } catch {}
             }
 
-            const repoHint = repo.endsWith("/github-ui") ? "ui" : "";
             const prTitle = prTitleByLabel.get(label) || r.source_pr_title || "";
             const nameTokens = new Set(
-                tokenizeForMatch(`${r.name || ""} ${prTitle} ${repoHint}`),
+                tokenizeForMatch(`${r.name || ""} ${prTitle}`),
             );
             const branchTokens = new Set(
                 tokenizeForMatch(`${r.branch || ""} ${planHeading}`),
@@ -832,8 +852,11 @@ export async function autoMatchSessionPrs(
 
     // Candidates for auto-matching: either a specific targetItemId (just added/edited)
     // or all items in the active/latest day block that have no PR attached yet
+    // and haven't had a PR manually X'd out / disabled by the user.
     const candidateItems = state.items.filter((it) => {
         if (it.upcoming) return false;
+        if (it.autoPrDisabled) return false;
+        if (Array.isArray(it.dismissedPrs) && it.dismissedPrs.length > 0) return false;
         const prs = Array.isArray(it.prs) && it.prs.length ? it.prs : it.pr ? [it.pr] : [];
         if (prs.length > 0) return false;
         if (targetItemId) return it.id === targetItemId;
@@ -870,6 +893,7 @@ export async function autoMatchSessionPrs(
             : Date.now();
         const dismissed = new Set(item.dismissedPrs || []);
         const todoTokens = tokenizeForMatch(item.text);
+        const possessives = extractPossessiveTokens(item.text);
 
         for (const entry of entries) {
             if (
@@ -888,15 +912,22 @@ export async function autoMatchSessionPrs(
                 continue;
             }
 
+            // If todo mentions a possessive name (e.g. "Zwick's", "Peter's"), require that token in the session
+            if (
+                possessives.length > 0 &&
+                !possessives.every((p) => entry.allTokens.has(p))
+            ) {
+                continue;
+            }
+
             const diffHours = Math.abs(entry.updatedMs - dayMs) / (1000 * 3600);
             if (diffHours > 96) continue;
 
-            if (todoTokens.length === 0) continue;
+            if (todoTokens.length < 2) continue;
 
             let matchedWeight = 0;
             let totalTodoWeight = 0;
             let matchedCount = 0;
-            let maxMatchedIdf = 0;
 
             for (const t of todoTokens) {
                 const idf = tokenIdf(t);
@@ -904,24 +935,16 @@ export async function autoMatchSessionPrs(
                 if (entry.nameTokens.has(t)) {
                     matchedWeight += idf * 1.2;
                     matchedCount++;
-                    if (idf > maxMatchedIdf) maxMatchedIdf = idf;
                 } else if (entry.branchTokens.has(t)) {
                     matchedWeight += idf * 1.05;
                     matchedCount++;
-                    if (idf > maxMatchedIdf) maxMatchedIdf = idf;
                 }
             }
 
-            if (matchedCount === 0) continue;
-            const isRareSingleMatch =
-                matchedCount === 1 && maxMatchedIdf >= 2.0 && entry.allTokens.size <= 8;
-            const isShortTodoSingleMatch =
-                matchedCount === 1 &&
-                todoTokens.length <= 2 &&
-                entry.nameTokens.size <= 3;
-            if (matchedCount < 2 && !isRareSingleMatch && !isShortTodoSingleMatch) {
-                continue;
-            }
+            // Require at least 2 distinct meaningful tokens and >= 60% of the todo's tokens to match
+            if (matchedCount < 2) continue;
+            const tokenCoverage = matchedCount / todoTokens.length;
+            if (tokenCoverage < 0.6) continue;
 
             const coverageTodo = matchedWeight / Math.max(1, totalTodoWeight);
             const coverageSession =
@@ -937,7 +960,7 @@ export async function autoMatchSessionPrs(
                 score -= 0.35;
             }
 
-            if (score >= 0.58) {
+            if (score >= 0.8) {
                 pairs.push({ item, entry, score, explicit: false });
             }
         }
